@@ -7,7 +7,9 @@ name = "cidd"
 version = "0.1.0"
 description = "Contract Isolated Driven Development"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "PyYAML>=6.0,<7.0"
+]
 
 [project.scripts]
 cidd = "cidd.cli:main"

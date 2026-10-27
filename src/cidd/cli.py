@@ -3,7 +3,8 @@ import argparse
 from pathlib import Path
 
 from cidd.engine.templates import create_project
-
+from cidd.genome.parser import GenomeError, load_genome
+from cidd.genome.validator import validate_genome
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -31,6 +32,13 @@ def main() -> None:
         required=True,
     )
 
+    commands.add_parser(
+        "validate",
+        help="Validate the project genome",
+    )
+
+
+
     args = parser.parse_args()
 
     if args.command == "new-project":
@@ -47,6 +55,22 @@ def main() -> None:
             parser.error(str(error))
 
         print(f"Project created: {project}")
+    elif args.command == "validate":
+        try:
+            genome_path = (
+                Path.cwd() / "genome" / "genome.yaml"
+            )
+
+            genome = load_genome(genome_path)
+            validate_genome(genome)
+
+        except GenomeError as error:
+            print(f"[FAIL] {error}")
+            raise SystemExit(1) from error
+
+        print("CIDD 0.1.0 - Genome Validation")
+        print("[PASS] Genome syntax and structure")
+        print("Genome valid.")
 
     else:
         parser.print_help()
