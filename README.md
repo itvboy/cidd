@@ -1,4 +1,3 @@
-@'
 # CIDD
 
 Contract Isolated Driven Development
@@ -25,4 +24,3 @@ Track: Indie Developer
 Problem Statement: Push the Frontier
 
 Status: Initial development.
-'@ | Set-Content README.md -Encoding utf8

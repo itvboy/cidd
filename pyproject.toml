@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cidd"
+version = "0.1.0"
+description = "Contract Isolated Driven Development"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+cidd = "cidd.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["cidd*"]
