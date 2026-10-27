@@ -1,0 +1,18 @@
+genome: "0.1"
+
+project:
+  name: "{{project_name}}"
+  template: flutter
+
+domain:
+  entities: []
+
+application:
+  use_cases: []
+
+infrastructure:
+  persistence: []
+
+presentation:
+  framework: flutter
+  screens: []

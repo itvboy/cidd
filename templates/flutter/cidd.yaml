@@ -1,0 +1,11 @@
+template: flutter
+version: "0.1"
+
+runtime:
+  frontend:
+    cwd: flutter
+    command: flutter
+    args:
+      - run
+      - -d
+      - chrome
