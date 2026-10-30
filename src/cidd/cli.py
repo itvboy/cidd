@@ -1,5 +1,6 @@
 
 import argparse
+import json
 from pathlib import Path
 
 from cidd.engine.templates import create_project
@@ -55,6 +56,18 @@ def main() -> None:
     generate_command.add_argument("--graph", type=Path, default=Path(".cidd/contract-graph.json"))
     generate_command.add_argument("--output", type=Path, default=Path(".cidd/generated-runs"))
     generate_command.add_argument("--model", default="muse-glimmer")
+    generate_command.add_argument(
+        "--force",
+        action="store_true",
+        help="Regenerate all contracts without reusing previous implementations",
+    )
+
+    generate_command.add_argument(
+        "--snapshot",
+        type=Path,
+        default=None,
+        help="Use a previously validated snapshot as the generation baseline",
+    )    
 
     args = parser.parse_args()
 
@@ -106,7 +119,58 @@ def main() -> None:
         print(f"Written: {args.output}")
     elif args.command == "generate":
         try:
-            report = generate_graph(args.graph, args.output, create_provider(model=args.model))
+            if args.force and args.snapshot is not None:
+                parser.error("--force and --snapshot cannot be combined")
+
+            from cidd.engine.snapshot_selector import select_active_snapshot
+
+            project_root = args.graph.resolve().parent.parent
+
+            snapshot = None
+            if not args.force:
+                snapshot = args.snapshot or select_active_snapshot(project_root)
+
+            provider = create_provider(model=args.model)
+
+            if snapshot is None:
+                report = generate_graph(
+                    args.graph,
+                    args.output,
+                    provider,
+                )
+            else:
+                from cidd.engine.snapshot_selective import generate_from_snapshot
+
+                report = generate_from_snapshot(
+                    args.graph,
+                    snapshot,
+                    args.output,
+                    provider,
+                )
+
+            mode = (
+                "FORCED" if args.force
+                else "INCREMENTAL" if snapshot is not None
+                else "FULL"
+            )
+
+            report["generation_mode"] = mode
+
+            manifest_path = Path(report["run_dir"]) / "manifest.json"
+
+            manifest = json.loads(
+                manifest_path.read_text(encoding="utf-8")
+            )
+
+            manifest["generation_mode"] = mode
+
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+            print(f"Generation mode: {mode}")
+
         except (GenerationError, OSError, ValueError) as error:
             print(f"[FAIL] {error}")
             raise SystemExit(1) from error
@@ -114,7 +178,10 @@ def main() -> None:
             print(f"[{item['status']}] {item['id']} input={item['input_tokens']} output={item['output_tokens']}")
         print(f"Tokens: input={report['input_tokens']} output={report['output_tokens']}")
         print(f"Staging: {report['run_dir']}")
-        if any(item["status"] != "GENERATED" for item in report["results"]):
+        if any(
+            item["status"] not in ("GENERATED", "REUSED")
+            for item in report["results"]
+        ):
             raise SystemExit(1)
     else:
         parser.print_help()

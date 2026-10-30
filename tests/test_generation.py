@@ -37,9 +37,13 @@ def test_detects_tampering_before_llm(graph_file,tmp_path):
         generate_graph(graph_file,tmp_path/'runs',provider)
     assert provider.calls==[]
 
-def test_prevent_overwrite(graph_file,tmp_path):
-    provider=DummyProvider()
-    generate_graph(graph_file,tmp_path/'runs',provider)
-    with pytest.raises(GenerationError,match='already exists'):
-        generate_graph(graph_file,tmp_path/'runs',provider)
-    assert len(provider.calls)==1
+def test_consecutive_runs_have_unique_directories(graph_file, tmp_path):
+    provider = DummyProvider()
+
+    first = generate_graph(graph_file, tmp_path / "runs", provider)
+    second = generate_graph(graph_file, tmp_path / "runs", provider)
+
+    assert first["run_dir"] != second["run_dir"]
+    assert Path(first["run_dir"]).is_dir()
+    assert Path(second["run_dir"]).is_dir()
+    assert len(provider.calls) == 2

@@ -89,7 +89,7 @@ def generate_graph(graph_path: Path, output_dir: Path, provider: LLMProvider) ->
         graph_path.read_text(encoding="utf-8")
     )["fingerprint"]
 
-    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
     run_dir = output_dir / run_id
 
