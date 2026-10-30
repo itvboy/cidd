@@ -19,33 +19,101 @@ from cidd.engine.sanitizer import sanitize_dart
 from cidd.workers.isolated import IsolatedWorker
 from cidd.providers.factory import create_provider
 from cidd.engine.assembly import assemble
-
+from cidd.providers.base import LLMProvider, LLMResponse
 
 def _json(path):
     return json.loads(Path(path).read_text(encoding='utf-8'))
 
 
-class FeedbackProvider:
-    """Append diagnostic to the original user message, leaving the contract sealed."""
-    def __init__(self, upstream, feedback):
+class FeedbackProvider(LLMProvider):
+    """Append validation feedback without modifying the sealed contract."""
+
+    def __init__(self, upstream: LLMProvider, feedback: str) -> None:
         self.upstream = upstream
         self.feedback = feedback
 
-    def generate(self, system_prompt, user_prompt):
-        return self.upstream.generate(system_prompt, user_prompt + '\n\nVALIDATION FEEDBACK (FOR THIS CONTRACT ONLY):\n' + self.feedback +
-            '\nRegenerate the entire contract source. Do not patch previous code.')
+    def generate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> LLMResponse:
+        return self.upstream.generate(
+            system_prompt,
+            user_prompt
+            + "\n\nVALIDATION FEEDBACK (FOR THIS CONTRACT ONLY):\n"
+            + self.feedback
+            + "\nRegenerate the entire contract source. Do not patch previous code.",
+        )
 
+def route_architecture_feedback(
+    graph: dict,
+    feedback_path: Path,
+) -> dict:
+    """Load and validate isolated architecture feedback."""
+    feedback = _json(feedback_path)
 
-def retry_once(graph_path: Path, run_path: Path, report_path: Path, output_root: Path,
-               project: Path, provider, *, run_id: str | None = None, analyze: bool = True):
+    if feedback.get("schema") != "cidd.architecture-feedback/0.1":
+        raise GenerationError("Unsupported architecture feedback schema")
+
+    if feedback.get("graph_fingerprint") != graph["fingerprint"]:
+        raise GenerationError("Architecture feedback graph mismatch")
+
+    valid_ids = {c["id"] for c in graph["contracts"]}
+    affected = feedback.get("affected_contracts")
+
+    if not isinstance(affected, list) or not affected:
+        raise GenerationError("Architecture feedback must contain affected contracts")
+
+    ids = [entry.get("id") for entry in affected]
+    if len(ids) != len(set(ids)) or any(cid not in valid_ids for cid in ids):
+        raise GenerationError("Invalid or duplicate affected contract")
+
+    for entry in affected:
+        if not isinstance(entry.get("feedback"), str) or not entry["feedback"].strip():
+            raise GenerationError("Empty architecture feedback")
+
+    return feedback
+
+def retry_once(
+    graph_path: Path,
+    run_path: Path,
+    report_path: Path | None,
+    output_root: Path,
+    project: Path,
+    provider,
+    *,
+    architecture_feedback_path: Path | None = None,
+    run_id: str | None = None,
+    analyze: bool = True,
+):
     contracts = load_verified_graph(graph_path)
     graph = _json(graph_path)
     prior_graph = verified_snapshot(run_path)
     if prior_graph['fingerprint'] != graph['fingerprint']:
         raise GenerationError('Feedback retry requires identical sealed graph to source run')
     previous_manifest = _json(run_path / 'manifest.json')
-    report = _json(report_path)
-    feedback = route_feedback(graph, report)
+    if architecture_feedback_path is not None:
+        feedback = route_architecture_feedback(
+            graph,
+            architecture_feedback_path,
+        )
+    else:
+        if report_path is None:
+            raise GenerationError("Assembly report required")
+    if architecture_feedback_path is not None:
+        feedback = route_architecture_feedback(
+            graph,
+            architecture_feedback_path,
+        )
+    else:
+        if report_path is None:
+            raise GenerationError(
+                "Assembly report required for analyzer feedback"
+            )
+
+        report = _json(report_path)
+        feedback = route_feedback(graph, report)
+
     affected = {x['id']: x['feedback'] for x in feedback['affected_contracts']}
     if not affected:
         raise GenerationError('No actionable analyzer errors in report')
@@ -66,7 +134,7 @@ def retry_once(graph_path: Path, run_path: Path, report_path: Path, output_root:
         rel = _source_path(cid, contract.language)
         dest = target_run / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        item = dict(id=cid, status='FAILED', decision='FEEDBACK_RETRY' if cid in affected else 'UNCHANGED',
+        item: dict[str, object] = dict(id=cid, status='FAILED', decision='FEEDBACK_RETRY' if cid in affected else 'UNCHANGED',
                     contract_hash=signature(next(c for c in graph['contracts'] if c['id'] == cid)),
                     input_tokens=0, output_tokens=0, elapsed_seconds=0.0)
         start = time.perf_counter()
@@ -115,7 +183,7 @@ def retry_once(graph_path: Path, run_path: Path, report_path: Path, output_root:
         results=results, input_tokens=sum(x['input_tokens'] or 0 for x in results),
         output_tokens=sum(x['output_tokens'] or 0 for x in results),
         token_counts_complete=all(x['status'] != 'FAILED' for x in results),
-        feedback_source=str(report_path), retry_attempt=1)
+        feedback_source=str(architecture_feedback_path or report_path), retry_attempt=1)
     (target_run / 'manifest.json').write_text(json.dumps(manifest, indent=2, ensure_ascii=False)+'\n', encoding='utf-8')
     assembly_result = None
     if all(x['status'] != 'FAILED' for x in results):
@@ -127,12 +195,18 @@ def main():
     p = argparse.ArgumentParser(description='One isolated, bounded analyzer-feedback retry')
     p.add_argument('--graph', type=Path, required=True)
     p.add_argument('--run', type=Path, required=True, help='Previous run, with sealed-graph.json')
-    p.add_argument('--report', type=Path, required=True)
     p.add_argument('--project', type=Path, required=True)
     p.add_argument('--output', type=Path, default=Path('.cidd/generated-runs'))
     p.add_argument('--model', required=True)
+    p.add_argument('--report', type=Path)
+    p.add_argument('--architecture-feedback', type=Path)
     args = p.parse_args()
-    result = retry_once(args.graph, args.run, args.report, args.output, args.project, create_provider(model=args.model))
+    if bool(args.report) == bool(args.architecture_feedback):
+        p.error(
+            "Specify exactly one of --report or --architecture-feedback"
+        )
+
+    result = retry_once(args.graph, args.run, args.report, args.output, args.project, create_provider(model=args.model), architecture_feedback_path=args.architecture_feedback)
     for e in result['manifest']['results']:
         print(e['status'], e['id'], e['decision'], e.get('error',''))
     print('New run:', result['run_dir'])

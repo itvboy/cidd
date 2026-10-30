@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import hashlib
+import re
 
 from cidd.contracts.sealed import ContractDependency, SealedContract
 from cidd.skills.registry import resolve_skill
@@ -145,7 +146,18 @@ def derive_use_case_interface(entry: dict, language: str, known_entities: set[st
         dart_type = _dart_value_type(raw_type, known_entities, f"application.{name}.input.{field}")
         rendered.append(f"{dart_type} {field}")
     output = entry.get("output")
-    result_type = _dart_value_type(output, known_entities, f"application.{name}.output")
+
+    if not isinstance(output, str) or not output.strip():
+        raise GenomeError(
+            f"application.{name}: output must be a nonempty type string"
+        )
+
+    result_type = _dart_value_type(
+        output,
+        known_entities,
+        f"application.{name}.output",
+    )
+
     repository_deps = [x for x in entry.get("depends_on", []) if x in repository_names]
     if len(repository_deps) > 1:
         raise GenomeError(f"application.{name}: ambiguous repository constructor dependencies")
@@ -188,6 +200,58 @@ def _resolve_public_interface(identifier: str, entry: dict, layer: str,
         return derived
     return explicit
 
+def derive_dependency_type_context(
+    dependencies: list[ContractDependency],
+    indexed: dict,
+    language: str,
+) -> str:
+    """Resolve public entity types referenced by direct dependency APIs."""
+
+    referenced_interfaces = "\n".join(
+        dep.interface for dep in dependencies
+    )
+
+    direct_ids = {
+        dep.contract_id for dep in dependencies
+    }
+
+    resolved = []
+
+    for identifier, (entry, layer) in sorted(indexed.items()):
+        if layer != "domain":
+            continue
+
+        if not isinstance(entry.get("fields"), list):
+            continue
+
+        if identifier in direct_ids:
+            continue
+
+        entity_name = identifier.split(".", 1)[1]
+
+        if not re.search(
+            rf"\b{re.escape(entity_name)}\b",
+            referenced_interfaces,
+        ):
+            continue
+
+        resolved.append(
+            f"[{identifier}]\n"
+            + derive_entity_interface(entry, language)
+        )
+
+    if not resolved:
+        return ""
+
+    return (
+        "REFERENCED PUBLIC TYPE DEFINITIONS:\n"
+        + "\n\n".join(resolved)
+        + "\n\nThese definitions are read-only type information. "
+        "Do not redeclare these classes. "
+        "Respect exact field names and nullability. "
+        "Nullable values must be checked before use as non-null values."
+    )
+
 def build_graph(genome: dict) -> ContractGraph:
     validate_genome(genome)
     indexed = {}
@@ -226,6 +290,40 @@ def build_graph(genome: dict) -> ContractGraph:
             if not isinstance(interface, str) or not interface.strip():
                 raise GenomeError(f"{identifier}: dependency {dep} requires a nonempty interface")
             dependencies.append(ContractDependency(dep, interface))
+            
+        # Resolve public entity types referenced by direct dependency APIs.
+        # These are type dependencies, not additional implementation services.
+        referenced_interfaces = "\n".join(
+            dependency.interface for dependency in dependencies
+        )
+
+        existing_ids = {
+            dependency.contract_id for dependency in dependencies
+        }
+
+        for type_id, (type_entry, type_layer) in sorted(indexed.items()):
+            if type_layer != "domain":
+                continue
+
+            if not isinstance(type_entry.get("fields"), list):
+                continue
+
+            if type_id in existing_ids:
+                continue
+
+            type_name = type_id.split(".", 1)[1]
+
+            if not re.search(
+                rf"\b{re.escape(type_name)}\b",
+                referenced_interfaces,
+            ):
+                continue
+
+            interface = derive_entity_interface(type_entry, language)
+
+            dependencies.append(
+                ContractDependency(type_id, interface)
+            )
         language = genome.get("project", {}).get("language")
         if language is None:
             # Framework is not a source language; explicit language avoids guessing.
@@ -236,6 +334,20 @@ def build_graph(genome: dict) -> ContractGraph:
         skill = resolve_skill(language, identifier, entry)
         if not isinstance(skill, str):
             raise GenomeError(f"{identifier}: skill must be a string")
+
+        type_context = derive_dependency_type_context(
+            dependencies,
+            indexed,
+            language,
+        )
+
+        if type_context:
+            skill = (
+                skill + "\n\n" + type_context
+                if skill
+                else type_context
+            )
+        
         # Seal the same public API in the owner and every dependent's context.
         effective_entry = dict(entry)
         public_interface = _resolve_public_interface(identifier, entry, layer, language,

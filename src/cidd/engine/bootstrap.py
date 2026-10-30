@@ -49,8 +49,17 @@ def bootstrap_flutter(graph: dict, output: Path, package: str) -> dict:
     usecases = [cid for cid in screen_deps if cid.startswith('application.')]
     if not usecases:
         raise BootstrapError('Presentation contract does not declare application dependencies')
-    if len(usecases) != len(set(usecases)) or len(usecases) != len(screen_deps):
-        raise BootstrapError('MVP screen must depend only on distinct application use cases')
+    if (
+        len(screen_deps) != len(set(screen_deps))
+        or any(
+            not cid.startswith(("application.", "domain."))
+            for cid in screen_deps
+        )
+    ):
+        raise BootstrapError(
+            "MVP screen dependencies must be application or domain contracts"
+        )
+
     for cid in usecases:
         if cid not in entries:
             raise BootstrapError(f'Missing application contract: {cid}')

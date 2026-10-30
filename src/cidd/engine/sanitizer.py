@@ -14,7 +14,13 @@ class SanitizationResult:
     imports_added: int
 
 _FENCE = re.compile(r'\A\s*```(?:dart)?[ \t]*\r?\n(?P<code>.*?)\r?\n```[ \t]*\s*\Z', re.DOTALL | re.IGNORECASE)
-_IMPORT = re.compile(r"^(?P<indent>\s*)import\s+['\"](?P<uri>[^'\"]+)['\"]\s*;(?P<tail>\s*(?://.*)?)$", re.MULTILINE)
+_IMPORT = re.compile(
+    r"^(?P<indent>[ \t]*)import[ \t]+"
+    r"['\"](?P<uri>[^'\"]+)['\"]"
+    r"(?P<alias>[ \t]+as[ \t]+[A-Za-z_]\w*)?"
+    r"[ \t]*;(?P<tail>[ \t]*(?://[^\r\n]*)?)$",
+    re.MULTILINE,
+)
 _EXTERNAL_PREFIXES = ('dart:', 'package:flutter/', 'package:sqlite3/')
 _LAYERS = ('domain', 'application', 'infrastructure', 'presentation')
 
@@ -45,13 +51,47 @@ def sanitize_dart(raw: str, *, contract_id: str, dependencies: tuple[str, ...],
     deps = set(dependencies)
     if not deps.issubset(contract_ids):
         raise SanitizationError('Dependency missing from graph')
+
+    validate_contract_ownership(
+        source=source,
+        contract_id=contract_id,
+        dependencies=dependencies,
+    )
+
     paths = {cid: _path(cid, package_name) for cid in deps}
+
     # Only identify imports belonging to declared direct dependencies.
     replacements = 0
     retained: list[str] = []
-    imports_seen: set[str] = set()
+    imports_seen: set[tuple[str, str]] = set()
     for match in list(_IMPORT.finditer(source)):
         uri = match.group('uri')
+        alias = match.group('alias') or ''
+
+        # Remove unused self-imports deterministically.
+        layer, name = contract_id.split('.', 1)
+
+        self_imports = {
+            _path(contract_id, package_name),
+            f'package:{layer}.{name}',
+            f'package:{layer}.{name}.dart',
+        }
+
+        if uri in self_imports:
+            alias_name = alias.strip().removeprefix('as ').strip()
+
+            # Never remove a self-import if its alias is referenced.
+            if alias_name and re.search(
+                rf'\b{re.escape(alias_name)}\s*\.',
+                _IMPORT.sub('', source),
+            ):
+                raise SanitizationError(
+                    f'Self-import alias is referenced: {alias_name}'
+                )
+
+            replacements += 1
+            continue
+
         resolved = None
         if uri in paths.values():
             resolved = uri
@@ -67,6 +107,8 @@ def sanitize_dart(raw: str, *, contract_id: str, dependencies: tuple[str, ...],
                     f'package:{layer}/{_snake(name)}.dart',
                     f'{layer}/{name}.dart',
                     f'{layer}/{_snake(name)}.dart',
+                    f'package:{layer}.{name}',
+                    f'package:{layer}.{name}.dart',
                 }
                 if uri in guessed:
                     candidates.append(real_uri)
@@ -79,9 +121,10 @@ def sanitize_dart(raw: str, *, contract_id: str, dependencies: tuple[str, ...],
                 raise SanitizationError(f'Unknown or undeclared import: {uri}')
         if resolved != uri:
             replacements += 1
-        if resolved not in imports_seen:
-            retained.append(f"import '{resolved}';")
-            imports_seen.add(resolved)
+        key = (resolved, alias.strip())
+        if key not in imports_seen:
+            retained.append(f"import '{resolved}'{alias};")
+            imports_seen.add(key)
     # Remove existing import statements, then prepend canonical imports.
     body = _IMPORT.sub('', source).lstrip('\n')
     # Do not invent imports for dependencies not used: the assembly stage will
@@ -89,3 +132,32 @@ def sanitize_dart(raw: str, *, contract_id: str, dependencies: tuple[str, ...],
     header = '\n'.join(retained)
     normalized = (header + '\n\n' if header else '') + body.rstrip() + '\n'
     return SanitizationResult(normalized, bool(fenced), replacements, 0)
+
+def validate_contract_ownership(
+    source: str,
+    contract_id: str,
+    dependencies: tuple[str, ...],
+) -> None:
+    """Reject declarations that redefine dependency contracts."""
+
+    dependency_names = {
+        dependency.split(".", 1)[1]
+        for dependency in dependencies
+    }
+
+    declared_names = set(
+        re.findall(
+            r"\b(?:abstract\s+interface\s+class|"
+            r"abstract\s+class|class)\s+"
+            r"([A-Za-z_]\w*)",
+            source,
+        )
+    )
+
+    violations = declared_names & dependency_names
+
+    if violations:
+        raise SanitizationError(
+            "Worker redefined dependency contracts: "
+            + ", ".join(sorted(violations))
+        )
