@@ -1,0 +1,156 @@
+"""Graph-verified generation into a staging area. Never alters application sources."""
+from __future__ import annotations
+from dataclasses import dataclass
+from pathlib import Path
+import hashlib
+import json
+import re
+import time
+from datetime import datetime
+
+from cidd.contracts.sealed import ContractDependency, SealedContract
+from cidd.workers.isolated import IsolatedWorker
+from cidd.providers.base import LLMProvider
+
+# Local debugging; never affects the model's input or generated source.
+INCLUDE_DEBUG_CONTEXT = True
+
+
+class PromptRecordingProvider(LLMProvider):
+    """Capture exactly the prompts sent by IsolatedWorker."""
+
+    def __init__(self, delegate: LLMProvider):
+        self.delegate = delegate
+        self.messages: tuple[str, str] | None = None
+
+    def generate(self, system_prompt: str, user_prompt: str):
+        self.messages = (system_prompt, user_prompt)
+        return self.delegate.generate(system_prompt, user_prompt)
+
+
+def debug_source(source: str, messages: tuple[str, str], language: str) -> str:
+    """Append the original LLM messages as language-specific comments."""
+    prefix = "#" if language.lower() == "python" else "//"
+    system_prompt, user_prompt = messages
+    lines = [source.rstrip("\n"), "", f"{prefix} ------- PROMPT USED -------"]
+    lines.extend(f"{prefix} {line}" for line in system_prompt.split("\n"))
+    lines.append(f"{prefix} ------- CONTEXT USED -------")
+    lines.extend(f"{prefix} {line}" for line in user_prompt.split("\n"))
+    lines.append(f"{prefix} ------- END CIDD DEBUG CONTEXT -------")
+    return "\n".join(lines) + "\n"
+
+
+class GenerationError(ValueError):
+    pass
+
+
+def load_verified_graph(path: Path) -> tuple[SealedContract, ...]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("schema") != "cidd.contract-graph/0.1":
+        raise GenerationError("Unsupported contract graph schema")
+    contracts = []
+    ids = set()
+    for item in data.get("contracts", []):
+        if not isinstance(item, dict):
+            raise GenerationError("Malformed contract")
+        cid = item["id"]
+        if cid in ids:
+            raise GenerationError(f"Duplicate contract: {cid}")
+        ids.add(cid)
+        deps = tuple(ContractDependency(d["id"], d["interface"]) for d in item["dependencies"])
+        contracts.append(SealedContract(cid, item["language"], item["specification"], deps, item["skill"]))
+    if not isinstance(data.get("contracts"), list):
+        raise GenerationError("Missing contracts list")
+    payload = json.dumps([{
+        "id": c.contract_id, "language": c.language, "specification": c.specification,
+        "skill": c.skill, "dependencies": [(d.contract_id, d.interface) for d in c.dependencies]
+    } for c in contracts], sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+    computed = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    if computed != data.get("fingerprint"):
+        raise GenerationError("Graph fingerprint mismatch: rerun cidd build-graph")
+    return tuple(contracts)
+
+
+_SAFE_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$")
+_EXT = {"dart": ".dart", "python": ".py", "go": ".go"}
+
+
+def generate_graph(graph_path: Path, output_dir: Path, provider: LLMProvider) -> dict:
+    contracts = load_verified_graph(graph_path)  # preflight before any LLM usage
+    if not contracts:
+        raise GenerationError("No contracts to generate")
+    for c in contracts:
+        if not _SAFE_ID.fullmatch(c.contract_id):
+            raise GenerationError(f"Unsafe contract ID: {c.contract_id}")
+        if c.language.lower() not in _EXT:
+            raise GenerationError(f"Unsupported output language: {c.language}")
+    # Preserve the graph fingerprint and create a unique execution ID.
+    fingerprint = json.loads(
+        graph_path.read_text(encoding="utf-8")
+    )["fingerprint"]
+
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    run_dir = output_dir / run_id
+
+    if run_dir.exists():
+        raise GenerationError(
+            f"Run already exists (no overwrite): {run_dir}"
+        )
+    recorder = PromptRecordingProvider(provider) if INCLUDE_DEBUG_CONTEXT else None
+    worker = IsolatedWorker(recorder if recorder is not None else provider)
+    results = []
+    run_dir.mkdir(parents=True, exist_ok=False)
+    for contract in contracts:
+        start = time.perf_counter()
+        entry = {"id": contract.contract_id, "status": "FAILED", "input_tokens": None,
+                 "output_tokens": None, "elapsed_seconds": None}
+        try:
+            result = worker.generate(contract)
+            response = result.response
+            entry["input_tokens"] = response.input_tokens
+            entry["output_tokens"] = response.output_tokens
+            entry["elapsed_seconds"] = round(time.perf_counter() - start, 4)
+            source = response.content.strip()
+            if not source or source.startswith("```") or "```" in source:
+                # Preserve exactly what the provider returned, before rejecting it.
+                layer, name = contract.contract_id.split(".", 1)
+                raw_path = run_dir / "failed" / layer / (name + ".raw.txt")
+                raw_path.parent.mkdir(parents=True, exist_ok=True)
+                raw_path.write_text(response.content, encoding="utf-8")
+                entry["raw_response_path"] = raw_path.relative_to(run_dir).as_posix()
+                if recorder is not None and recorder.messages is not None:
+                    prompt_path = run_dir / "failed" / layer / (name + ".prompts.txt")
+                    prompt_path.write_text(
+                        "------- PROMPT USED -------\n" + recorder.messages[0]
+                        + "\n------- CONTEXT USED -------\n" + recorder.messages[1],
+                        encoding="utf-8",
+                    )
+                    entry["prompt_path"] = prompt_path.relative_to(run_dir).as_posix()
+                raise GenerationError(f"Model returned empty or fenced output for {contract.contract_id}")
+            layer, name = contract.contract_id.split(".", 1)
+            destination = run_dir / layer / (name + _EXT[contract.language.lower()])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(source + "\n", encoding="utf-8")
+            if INCLUDE_DEBUG_CONTEXT:
+                if recorder is None or recorder.messages is None:
+                    raise GenerationError("Debug prompt capture was unavailable")
+                debug_destination = run_dir / "debug" / layer / (name + _EXT[contract.language.lower()])
+                debug_destination.parent.mkdir(parents=True, exist_ok=True)
+                debug_destination.write_text(
+                    debug_source(source, recorder.messages, contract.language), encoding="utf-8"
+                )
+                entry["debug_path"] = debug_destination.relative_to(run_dir).as_posix()
+            entry["status"] = "GENERATED"  # not validated, compiled, or accepted
+            entry["path"] = destination.relative_to(run_dir).as_posix()
+        except Exception as error:
+            entry["elapsed_seconds"] = round(time.perf_counter() - start, 4)
+            entry["error"] = f"{type(error).__name__}: {error}"
+        results.append(entry)
+        # Persist an incremental manifest even if a later request fails.
+        manifest = {"schema": "cidd.generation-run/0.1",  "run_id": run_id, "graph_fingerprint": fingerprint,
+                    "results": results, "input_tokens": sum(x["input_tokens"] or 0 for x in results),
+                    "output_tokens": sum(x["output_tokens"] or 0 for x in results),
+                    "token_counts_complete": all(x["input_tokens"] is not None and x["output_tokens"] is not None for x in results)}
+        (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return {**manifest, "run_dir": str(run_dir)}

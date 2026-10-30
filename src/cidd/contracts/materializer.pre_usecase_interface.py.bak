@@ -1,0 +1,163 @@
+"""Deterministic genome -> sealed contract graph. No model calls."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+from pathlib import Path
+import hashlib
+
+from cidd.contracts.sealed import ContractDependency, SealedContract
+from cidd.skills.registry import resolve_skill
+from cidd.genome.parser import GenomeError
+from cidd.genome.validator import validate_genome
+
+SECTIONS = (("domain", "entities"), ("application", "use_cases"),
+            ("infrastructure", "persistence"), ("presentation", "screens"))
+
+@dataclass(frozen=True)
+class ContractGraph:
+    contracts: tuple[SealedContract, ...]
+    fingerprint: str
+
+    def to_dict(self) -> dict:
+        return {"schema": "cidd.contract-graph/0.1", "fingerprint": self.fingerprint,
+                "contracts": [
+                    {"id": c.contract_id, "language": c.language,
+                     "specification": c.specification, "skill": c.skill,
+                     "dependencies": [{"id": d.contract_id, "interface": d.interface}
+                                      for d in c.dependencies]}
+                    for c in self.contracts]}
+
+
+def _name(entry: dict, location: str) -> str:
+    value = entry.get("id", entry.get("name"))
+    if not isinstance(value, str) or not value.strip():
+        raise GenomeError(f"{location}: expected a nonempty 'id' or 'name'")
+    if any(ch.isspace() for ch in value) or '/' in value or '\\' in value:
+        raise GenomeError(f"{location}: invalid contract identifier {value!r}")
+    return value
+
+
+# MVP Dart entity public surface: deterministic, no LLM tokens.
+_DART_TYPES = {"int": "int", "string": "String", "bool": "bool", "double": "double"}
+
+
+def derive_entity_interface(entry: dict, language: str) -> str:
+    """Render a Dart entity's field interface, not its implementation.
+
+    Reject unsupported or ambiguous types instead of guessing.
+    """
+    if language.lower() != "dart":
+        raise GenomeError("Automatic entity interfaces currently support Dart only")
+    entity_name = _name(entry, "domain.entities")
+    fields = entry.get("fields")
+    if not isinstance(fields, list) or not fields:
+        raise GenomeError(f"domain.{entity_name}: fields must be a nonempty list")
+    lines = [f"class {entity_name} {{"]
+    seen = set()
+    for field in fields:
+        if not isinstance(field, dict):
+            raise GenomeError(f"domain.{entity_name}: invalid field")
+        name = field.get("name")
+        raw_type = field.get("type")
+        if not isinstance(name, str) or not name.isidentifier() or name in seen:
+            raise GenomeError(f"domain.{entity_name}: invalid or duplicate field name {name!r}")
+        seen.add(name)
+        if not isinstance(raw_type, str) or raw_type.lower() not in _DART_TYPES:
+            raise GenomeError(f"domain.{entity_name}.{name}: unsupported Dart type {raw_type!r}")
+        if not isinstance(field.get("nullable", False), bool):
+            raise GenomeError(f"domain.{entity_name}.{name}: nullable must be boolean")
+        if not isinstance(field.get("required", False), bool):
+            raise GenomeError(f"domain.{entity_name}.{name}: required must be boolean")
+        if field.get("nullable", False) and field.get("required", False):
+            raise GenomeError(f"domain.{entity_name}.{name}: nullable and required conflict in MVP")
+        dart_type = _DART_TYPES[raw_type.lower()] + ("?" if field.get("nullable", False) else "")
+        lines.append(f"  final {dart_type} {name};")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def build_graph(genome: dict) -> ContractGraph:
+    validate_genome(genome)
+    indexed = {}
+    for layer, collection in SECTIONS:
+        for i, entry in enumerate(genome[layer][collection]):
+            where = f"{layer}.{collection}[{i}]"
+            if not isinstance(entry, dict):
+                raise GenomeError(f"{where}: expected mapping")
+            identifier = f"{layer}.{_name(entry, where)}"
+            if identifier in indexed:
+                raise GenomeError(f"Duplicate contract: {identifier}")
+            indexed[identifier] = (entry, layer)
+
+    contracts = []
+    for identifier, (entry, layer) in sorted(indexed.items()):
+        deps = entry.get("depends_on", [])
+        if not isinstance(deps, list) or any(not isinstance(x, str) for x in deps):
+            raise GenomeError(f"{identifier}: depends_on must be a list of IDs")
+        if len(deps) != len(set(deps)):
+            raise GenomeError(f"{identifier}: duplicate dependency")
+        dependencies = []
+        for dep in deps:
+            if dep == identifier:
+                raise GenomeError(f"{identifier}: self dependency")
+            if dep not in indexed:
+                raise GenomeError(f"{identifier}: unknown dependency {dep!r}")
+            dep_entry, dep_layer = indexed[dep]
+            interface = dep_entry.get("interface")
+            # Only domain entities with explicit fields are derivable.
+            # Repositories and use cases still require their defined public interfaces.
+            if (dep_layer == "domain" and isinstance(dep_entry.get("fields"), list)):
+                derived = derive_entity_interface(dep_entry, genome["project"]["language"])
+                if interface is not None and interface.strip() != derived.strip():
+                    raise GenomeError(f"{dep}: explicit interface disagrees with fields; remove redundant interface")
+                interface = derived
+            if not isinstance(interface, str) or not interface.strip():
+                raise GenomeError(f"{identifier}: dependency {dep} requires a nonempty interface")
+            dependencies.append(ContractDependency(dep, interface))
+        language = genome.get("project", {}).get("language")
+        if language is None:
+            # Framework is not a source language; explicit language avoids guessing.
+            raise GenomeError(f"{identifier}: specify 'language' in entry or project")
+        if not isinstance(language, str) or not language.strip():
+            raise GenomeError(f"{identifier}: language must be nonempty")
+        skill = entry.get("skill", "")
+        skill = resolve_skill(language, identifier, entry)
+        if not isinstance(skill, str):
+            raise GenomeError(f"{identifier}: skill must be a string")
+        # Public entity interface is derived from its fields, with no source-genome mutation.
+        effective_entry = dict(entry)
+        if layer == "domain" and isinstance(entry.get("fields"), list):
+            derived = derive_entity_interface(entry, language)
+            explicit = entry.get("interface")
+            if explicit is not None and explicit.strip() != derived.strip():
+                raise GenomeError(f"{identifier}: explicit interface disagrees with fields")
+            effective_entry["interface"] = derived
+        specification = json.dumps(effective_entry, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+        contracts.append(SealedContract(identifier, language, specification,
+                                        tuple(dependencies), skill))
+
+    payload = json.dumps([{
+        "id": c.contract_id, "language": c.language, "specification": c.specification,
+        "skill": c.skill, "dependencies": [(d.contract_id, d.interface) for d in c.dependencies]
+    } for c in contracts], sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+    fingerprint = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+    return ContractGraph(tuple(contracts), fingerprint)
+
+
+def write_graph(graph: ContractGraph, path: Path) -> None:
+    """Atomic graph replacement; never touch generated implementation files."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    import os
+    import tempfile
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=path.parent,
+                                         prefix='.graph-', suffix='.tmp', delete=False) as out:
+            tmp = Path(out.name)
+            json.dump(graph.to_dict(), out, ensure_ascii=False, indent=2)
+            out.write('\n')
+        os.replace(tmp, path)
+    finally:
+        if tmp is not None and tmp.exists():
+            tmp.unlink()

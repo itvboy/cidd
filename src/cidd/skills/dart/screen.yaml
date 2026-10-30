@@ -1,0 +1,19 @@
+skill:
+  name: flutter-screen
+rules:
+  - Implement a real Flutter Widget (StatelessWidget or StatefulWidget as appropriate).
+  - Build the requested screen using Flutter widgets such as Scaffold.
+  - Reuse public use-case interfaces supplied as dependencies; do not invent placeholders or stub classes.
+  - Do not redefine domain entities, use cases or widgets owned by other contracts.
+  - Avoid referencing undeclared components or APIs; if a dependency is missing, do not fabricate its implementation.
+  - Preserve the requested screen behaviors and widget hierarchy.
+  - Output only Dart source code without markdown.
+  - All widgets listed in the screen specification belong to this
+    contract unless explicitly declared as external dependencies.
+  - Implement all owned widgets in the same Dart source file.
+  - Do not reference widgets that are not implemented in this file
+    or provided through declared dependencies.
+  - Do not generate placeholder implementations.
+  - Connect screen interactions to the provided use-case interfaces.
+  - Preserve required public constructors and method signatures.
+  - Render the screen title as "My Tasks".

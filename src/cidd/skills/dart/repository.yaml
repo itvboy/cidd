@@ -1,0 +1,11 @@
+skill:
+  name: dart-repository
+  language: dart
+  target: repository
+rules:
+  - Generate only the abstract repository interface defined in the sealed specification.
+  - Preserve each method name, argument and return type exactly, including Future and nullability.
+  - Do not add CRUD methods or rename any method.
+  - Do not implement persistence or business logic.
+  - Reuse the provided domain entities; never redefine them.
+  - Do not add comments, markdown or unrelated classes.

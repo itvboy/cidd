@@ -1,0 +1,151 @@
+"""Offline, conservative CIDD Dart assembly and import resolution.
+
+Usage: python -m cidd.engine.assembly --graph .cidd/contract-graph.json \
+  --run .cidd/generated-runs/20261029_152541 --project .
+"""
+from __future__ import annotations
+import argparse
+import json
+import re
+import shutil
+import subprocess
+from pathlib import Path
+from dataclasses import dataclass
+
+from cidd.engine.sanitizer import sanitize_dart, SanitizationError, _path
+
+_IDENT = re.compile(r'\b[A-Za-z_][A-Za-z_0-9]*\b')
+_IMPORT = re.compile(r"(?m)^\s*import\s+['\"]([^'\"]+)['\"]\s*;[^\n]*\n?")
+_CLASS = re.compile(r'\b(?:class|enum|mixin|extension\s+type)\s+([A-Za-z_]\w*)')
+
+class AssemblyError(ValueError):
+    pass
+
+
+def _package(project: Path) -> str:
+    pubspec = project / 'pubspec.yaml'
+    if not pubspec.is_file():
+        raise AssemblyError(f'Missing project pubspec.yaml: {pubspec}')
+    match = re.search(r'(?m)^name:\s*([a-z][a-z0-9_]*)\s*(?:#.*)?$', pubspec.read_text(encoding='utf-8'))
+    if not match:
+        raise AssemblyError('Cannot determine Dart package name from pubspec.yaml')
+    return match.group(1)
+
+
+def _read_graph(path: Path) -> dict:
+    data = json.loads(path.read_text(encoding='utf-8'))
+    if not isinstance(data.get('contracts'), list) or not data.get('fingerprint'):
+        raise AssemblyError('Invalid sealed graph')
+    ids = [c['id'] for c in data['contracts']]
+    if len(ids) != len(set(ids)):
+        raise AssemblyError('Duplicate contract ID')
+    return data
+
+
+def _code_with_imports(source: str, *, current: str, graph: dict, package: str) -> tuple[str, list[str]]:
+    entries = {c['id']: c for c in graph['contracts']}
+    entry = entries[current]
+    direct = {d['id'] for d in entry['dependencies']}
+    symbols = {cid.split('.', 1)[1]: cid for cid in entries}
+    if len(symbols) != len(entries):
+        raise AssemblyError('Ambiguous class name across contracts')
+    # Normalize existing imports with the current sanitizer: never accept guessed paths.
+    normalized = sanitize_dart(source, contract_id=current,
+        dependencies=tuple(sorted(direct)), all_contract_ids=tuple(sorted(entries)),
+        package_name=package).source
+    existing = set(_IMPORT.findall(normalized))
+    body = _IMPORT.sub('', normalized)
+    # Public API transitive types may be imported when explicitly named by an authorized
+    # direct dependency's sealed interface (e.g. Todo in List<Todo>).
+    api_types = set()
+    for dep in entry['dependencies']:
+        api_types.update(_IDENT.findall(dep['interface']))
+    allowed = direct | {cid for symbol, cid in symbols.items()
+                        if symbol in api_types and cid != current}
+    # Keep symbol resolution conservative: ignore comments and string literals when
+    # deciding whether a class is referenced. Dart analyzer is authoritative later.
+    scan = re.sub(r'//[^\n]*|/\*[\s\S]*?\*/|\"(?:\\.|[^\"\\])*\"|\'(?:\\.|[^\'\\])*\'', ' ', body)
+    used = set(_IDENT.findall(scan))
+    required = {cid for name, cid in symbols.items() if name in used and cid != current}
+    forbidden = required - allowed
+    if forbidden:
+        raise AssemblyError('Undeclared referenced contracts: ' + ', '.join(sorted(forbidden)))
+    paths = {_path(cid, package) for cid in required}
+    for uri in existing:
+        if uri.startswith(f'package:{package}/') and uri not in paths:
+            # Existing internal imports must be backed by an authorized dependency.
+            raise AssemblyError(f'Unexpected internal import: {uri}')
+    imports = sorted(existing | paths)
+    # An import URI can exist without a known external package; dart analyze will catch it.
+    combined = ''.join(f"import '{u}';\n" for u in imports)
+    return (combined + '\n' if combined else '') + body.lstrip('\n'), sorted(paths - existing)
+
+
+def assemble(graph_path: Path, run_dir: Path, project: Path, output: Path, *, analyze: bool=True) -> dict:
+    graph = _read_graph(graph_path)
+    package = _package(project)
+    if output.exists():
+        raise AssemblyError(f'Output already exists: {output}')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(project, output, ignore=shutil.ignore_patterns('.cidd', '.dart_tool', 'build', '.git', '.idea'))
+    items = []
+    for contract in graph['contracts']:
+        cid = contract['id']
+        layer, name = cid.split('.', 1)
+        original = run_dir / layer / (name + '.dart')
+        if not original.is_file():
+            # Fenced failed output is eligible for offline sanitization and recovery.
+            original = run_dir / 'failed' / layer / (name + '.raw.txt')
+        if not original.is_file():
+            items.append({'id':cid, 'status':'MISSING_SOURCE'})
+            continue
+        try:
+            fixed, added = _code_with_imports(original.read_text(encoding='utf-8'),
+                current=cid, graph=graph, package=package)
+            destination = output / 'lib' / layer / (_path(cid,package).rsplit('/',1)[1])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(fixed, encoding='utf-8')
+            items.append({'id':cid,'status':'ASSEMBLED','path':str(destination.relative_to(output)),
+                          'imports_added':added,'recovered_from_failed':'.raw.txt' in original.name})
+        except (SanitizationError, AssemblyError) as exc:
+            items.append({'id':cid,'status':'FAILED','diagnostic':str(exc)})
+    report = {'schema':'cidd.assembly-report/0.1','graph_fingerprint':graph['fingerprint'],
+              'package':package,'contracts':items,'analyzer':{'status':'NOT_RUN'}}
+    if analyze and all(i['status']=='ASSEMBLED' for i in items):
+        flutter = shutil.which('flutter')
+        dart = shutil.which('dart')
+        if flutter or dart:
+            cmd = [flutter,'analyze','--no-pub'] if flutter else [dart,'analyze']
+            # --no-pub avoids dependency downloads, but assumes dependencies resolved already.
+            result = subprocess.run(cmd,cwd=output,capture_output=True,text=True,timeout=120)
+            report['analyzer'] = {'status':'PASS' if result.returncode==0 else 'FAIL',
+                                  'command':cmd,'exit_code':result.returncode,
+                                  'stdout':result.stdout[-40000:], 'stderr':result.stderr[-40000:]}
+        else:
+            report['analyzer']={'status':'UNAVAILABLE','diagnostic':'Neither flutter nor dart executable found'}
+    elif analyze:
+        report['analyzer']={'status':'BLOCKED','diagnostic':'One or more contracts not assembled'}
+    (output/'cidd-assembly-report.json').write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+    return report
+
+
+def main():
+    parser=argparse.ArgumentParser(description='Offline CIDD Dart assembly; never invokes LLM')
+    parser.add_argument('--graph',type=Path,required=True)
+    parser.add_argument('--run',type=Path,required=True)
+    parser.add_argument('--project',type=Path,required=True)
+    parser.add_argument('--output',type=Path,default=None)
+    parser.add_argument('--no-analyze',action='store_true')
+    args=parser.parse_args()
+    output=args.output or (args.project/'.cidd'/'assembled' / args.run.name)
+    result=assemble(args.graph,args.run,args.project,output,analyze=not args.no_analyze)
+    print('Assembly:',output)
+    for item in result['contracts']:
+        print(item['status'],item['id'],item.get('diagnostic',''))
+    print('Analyzer:',result['analyzer']['status'])
+    print('Report:',output/'cidd-assembly-report.json')
+    if result['analyzer']['status']=='FAIL' or any(i['status']!='ASSEMBLED' for i in result['contracts']):
+        raise SystemExit(1)
+
+if __name__=='__main__':
+    main()

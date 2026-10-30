@@ -1,0 +1,12 @@
+skill:
+  name: dart-entity
+  language: dart
+  target: entity
+rules:
+  - Preserve every field, type, nullability and default from the specification.
+  - Provide a named-parameter constructor consistent with all fields; required fields must be required.
+  - Expose the public fields and constructor without inventing new public members.
+  - Use immutable final fields.
+  - Do not generate serialization, persistence, or unrelated helpers.
+  - Do not redefine dependency types.
+  - Output only Dart source code without markdown.

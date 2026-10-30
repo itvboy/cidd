@@ -1,0 +1,12 @@
+skill:
+  name: dart-use-case
+  language: dart
+  target: use_case
+rules:
+  - Implement exactly one use-case class and all specified business rules.
+  - Depend only on provided public interfaces and never redefine dependencies.
+  - Do not invent repository operations or change their signatures, including Future and nullability.
+  - Follow the provided entity constructor contract; do not guess positional versus named arguments.
+  - Keep persistence implementation outside the use case.
+  - Preserve idempotency and failure rules from the specification.
+  - Output only Dart source code without markdown.

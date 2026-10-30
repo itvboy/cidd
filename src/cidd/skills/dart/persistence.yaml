@@ -1,0 +1,11 @@
+skill:
+  name: dart-persistence
+rules:
+  - Implement exactly the persistence component specified in this contract.
+  - Reuse domain entities and repository interfaces supplied as dependencies.
+  - Do not declare duplicate domain entities or repository abstractions.
+  - Do not invent delete or CRUD methods absent from the specified interface.
+  - When an interface is supplied, implement its signatures exactly; otherwise do not fabricate one.
+  - Use only the persistence provider specified in this contract.
+  - Do not invent package APIs, classes or unavailable imports.
+  - Output only Dart source code without markdown.
