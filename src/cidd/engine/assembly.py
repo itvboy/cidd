@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 
 from cidd.engine.sanitizer import sanitize_dart, SanitizationError, _path
+from cidd.engine.bootstrap import bootstrap_flutter, BootstrapError
 
 _IDENT = re.compile(r'\b[A-Za-z_][A-Za-z_0-9]*\b')
 _IMPORT = re.compile(r"(?m)^\s*import\s+['\"]([^'\"]+)['\"]\s*;[^\n]*\n?")
@@ -164,8 +165,13 @@ def assemble(graph_path: Path, run_dir: Path, project: Path, output: Path, *, an
             items.append({'id':cid,'status':'FAILED','diagnostic':str(exc)})
     report = {'schema':'cidd.assembly-report/0.1','graph_fingerprint':graph['fingerprint'],
               'package':package,'contracts':items, 'dependencies_added':[],
-              'pub_get':{'status':'NOT_RUN'}, 'analyzer':{'status':'NOT_RUN'}}
-    if analyze and all(i['status']=='ASSEMBLED' for i in items):
+              'bootstrap':{'status':'NOT_RUN'}, 'pub_get':{'status':'NOT_RUN'}, 'analyzer':{'status':'NOT_RUN'}}
+    if all(i['status']=='ASSEMBLED' for i in items):
+        try:
+            report['bootstrap'] = bootstrap_flutter(graph, output, package)
+        except BootstrapError as exc:
+            report['bootstrap'] = {'status': 'FAIL', 'diagnostic': str(exc)}
+    if analyze and report['bootstrap']['status']=='PASS':
         try:
             report['dependencies_added'] = _prepare_dependencies(graph, output)
         except AssemblyError as exc:
@@ -190,7 +196,7 @@ def assemble(graph_path: Path, run_dir: Path, project: Path, output: Path, *, an
                 report['pub_get'] = {'status':'UNAVAILABLE'}
                 report['analyzer']={'status':'UNAVAILABLE','diagnostic':'Neither flutter nor dart executable found'}
     elif analyze:
-        report['analyzer']={'status':'BLOCKED','diagnostic':'One or more contracts not assembled'}
+        report['analyzer']={'status':'BLOCKED','diagnostic':'One or more contracts not assembled or bootstrap failed'}
     (output/'cidd-assembly-report.json').write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
     return report
 
@@ -208,9 +214,10 @@ def main():
     print('Assembly:',output)
     for item in result['contracts']:
         print(item['status'],item['id'],item.get('diagnostic',''))
+    print('Bootstrap:',result['bootstrap']['status'])
     print('Analyzer:',result['analyzer']['status'])
     print('Report:',output/'cidd-assembly-report.json')
-    if result['analyzer']['status'] in ('FAIL', 'BLOCKED') or any(i['status']!='ASSEMBLED' for i in result['contracts']):
+    if result['bootstrap']['status'] != 'PASS' or result['analyzer']['status'] in ('FAIL', 'BLOCKED') or any(i['status']!='ASSEMBLED' for i in result['contracts']):
         raise SystemExit(1)
 
 if __name__=='__main__':
