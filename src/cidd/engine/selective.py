@@ -13,7 +13,13 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from cidd.engine.generation import load_verified_graph, GenerationError
+from cidd.engine.generation import (
+    load_verified_graph,
+    GenerationError,
+    PromptRecordingProvider,
+    debug_source,
+    INCLUDE_DEBUG_CONTEXT,
+)
 from cidd.workers.isolated import IsolatedWorker
 from cidd.providers.factory import create_provider
 
@@ -83,7 +89,9 @@ def selective_generate(graph_path: Path, previous_run: Path, output_root: Path, 
     run_dir.mkdir(parents=True, exist_ok=False)
     # Snapshot the exact verified current graph before any model call.
     shutil.copyfile(graph_path, run_dir / 'sealed-graph.json')
-    worker = IsolatedWorker(provider)
+    recording_provider = PromptRecordingProvider(provider)
+    worker = IsolatedWorker(recording_provider)
+
     results = []
     for contract in contracts:
         cid = contract.contract_id
@@ -127,8 +135,33 @@ def selective_generate(graph_path: Path, previous_run: Path, output_root: Path, 
                     source = response.content.strip()
                 if not source or '```' in source:
                     raise GenerationError('Invalid source output')
+
                 target.write_text(source + '\n', encoding='utf-8')
+
+                if INCLUDE_DEBUG_CONTEXT and recording_provider.messages is not None:
+                    debug_path = (
+                        run_dir
+                        / "debug"
+                        / target_rel.parent
+                        / (target_rel.stem + ".prompt.txt")
+                    )
+                    debug_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    system_prompt, user_prompt = recording_provider.messages
+
+                    debug_path.write_text(
+                        "=== SYSTEM PROMPT ===\n"
+                        + system_prompt
+                        + "\n\n=== USER CONTEXT ===\n"
+                        + user_prompt
+                        + "\n",
+                        encoding="utf-8",
+                    )
+
+                    item["debug_prompt_path"] = debug_path.relative_to(run_dir).as_posix()
+
                 item['status'] = 'GENERATED'
+
             item['path'] = target_rel.as_posix()
             item['source_sha256'] = hashlib.sha256(target.read_bytes()).hexdigest()
         except Exception as exc:

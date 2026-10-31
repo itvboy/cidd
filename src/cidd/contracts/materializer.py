@@ -278,6 +278,31 @@ def build_graph(genome: dict) -> ContractGraph:
             raise GenomeError(f"{identifier}: depends_on must be a list of IDs")
         if len(deps) != len(set(deps)):
             raise GenomeError(f"{identifier}: duplicate dependency")
+
+        if layer == "presentation" and "uses" in entry:
+            uses = entry["uses"]
+
+            if not isinstance(uses, list) or any(
+                not isinstance(name, str) for name in uses
+            ):
+                raise GenomeError(
+                    f"{identifier}: uses must be a list of use-case names"
+                )
+
+            expected = {
+                dep.split(".", 1)[1]
+                for dep in deps
+                if dep.startswith("application.")
+            }
+
+            actual = set(uses)
+
+            if len(uses) != len(actual) or actual != expected:
+                raise GenomeError(
+                    f"{identifier}: uses must match application dependencies. "
+                    f"Expected {sorted(expected)}, got {sorted(actual)}"
+                )
+        
         dependencies = []
         for dep in deps:
             if dep == identifier:
@@ -290,7 +315,7 @@ def build_graph(genome: dict) -> ContractGraph:
             if not isinstance(interface, str) or not interface.strip():
                 raise GenomeError(f"{identifier}: dependency {dep} requires a nonempty interface")
             dependencies.append(ContractDependency(dep, interface))
-            
+
         # Resolve public entity types referenced by direct dependency APIs.
         # These are type dependencies, not additional implementation services.
         referenced_interfaces = "\n".join(
@@ -332,6 +357,40 @@ def build_graph(genome: dict) -> ContractGraph:
             raise GenomeError(f"{identifier}: language must be nonempty")
         skill = entry.get("skill", "")
         skill = resolve_skill(language, identifier, entry)
+        if (
+            layer == "infrastructure"
+            and language.lower() == "dart"
+            and entry.get("provider") == "sqlite3"
+        ):
+            class_name = identifier.split(".", 1)[1]
+
+            skill += (
+                "\n\nSEALED CONSTRUCTION API:\n"
+                f"- Required constructor: {class_name}(Database database)\n"
+                "- Database is provided by package:sqlite3/sqlite3.dart.\n"
+                "- The bootstrap opens the database and passes the Database instance.\n"
+                "- Do not replace Database with String, dynamic, or Object.\n"
+                "- Do not call sqlite3.open() inside the adapter constructor.\n"
+                "- Store and use the provided Database instance.\n"
+                "- Initialize the database schema in the constructor.\n"
+                "- Execute CREATE TABLE IF NOT EXISTS for every persisted entity.\n"
+                "- Complete schema initialization before the constructor returns.\n"
+                "- Reopening an existing database must preserve its records.\n"
+                "- Do not assume tables already exist.\n"
+            )
+
+            api_skill_path = (
+                Path(__file__).resolve().parents[1]
+                / "skills"
+                / "api"
+                / "dart"
+                / "sqlite3_v3.txt"
+            )
+
+            api_skill = api_skill_path.read_text(encoding="utf-8")
+
+            skill += "\n\n" + api_skill
+
         if not isinstance(skill, str):
             raise GenomeError(f"{identifier}: skill must be a string")
 

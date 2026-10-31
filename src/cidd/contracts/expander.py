@@ -16,6 +16,10 @@ Only include persistence operations required by those use cases.
 Do not copy use-case names into repository methods.
 No implementation, SQL, business workflows, extra classes, imports or markdown.
 Use explicit Dart parameter and return types. Prefer add/update over generic upsert.
+The repository uses synchronous native SQLite operations.
+All repository methods MUST be synchronous.
+Do not use Future, FutureOr, Stream, async, or asynchronous return types.
+Return concrete Dart types directly.
 Return one valid JSON object with one key: interface.
 The interface must be a Dart abstract class named {repository_name}.
 """
@@ -44,6 +48,13 @@ def _extract_interface(raw: str, expected_name: str) -> str:
     lines = [line.strip() for line in body.splitlines() if line.strip()]
     if not lines or any(not line.endswith(';') or '(' not in line or ')' not in line for line in lines):
         raise GenomeError('Repository expansion: expected abstract method signatures only')
+
+    if re.search(r'\b(?:Future|FutureOr|Stream)\b|\basync\b', code):
+        raise GenomeError(
+            f"Repository expansion: {expected_name} must use "
+            "synchronous method signatures for native SQLite"
+        )
+    
     return code
 
 

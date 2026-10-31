@@ -1,19 +1,46 @@
+
 skill:
   name: flutter-screen
+
 rules:
+  # WIDGET IMPLEMENTATION
   - Implement a real Flutter Widget (StatelessWidget or StatefulWidget as appropriate).
   - Build the requested screen using Flutter widgets such as Scaffold.
-  - Reuse public use-case interfaces supplied as dependencies; do not invent placeholders or stub classes.
-  - Do not redefine domain entities, use cases or widgets owned by other contracts.
-  - Avoid referencing undeclared components or APIs; if a dependency is missing, do not fabricate its implementation.
   - Preserve the requested screen behaviors and widget hierarchy.
-  - Output only Dart source code without markdown.
-  - All widgets listed in the screen specification belong to this
-    contract unless explicitly declared as external dependencies.
-  - Implement all owned widgets in the same Dart source file.
-  - Do not reference widgets that are not implemented in this file
-    or provided through declared dependencies.
-  - Do not generate placeholder implementations.
+  - Render the screen title as "My Tasks".
   - Connect screen interactions to the provided use-case interfaces.
   - Preserve required public constructors and method signatures.
-  - Render the screen title as "My Tasks".
+
+  # CONTRACT ISOLATION — STRICT
+  - Generate ONLY the implementation owned by the requested presentation contract.
+  - Dependency contracts are already implemented in separate Dart files.
+  - Treat dependency declarations as READ-ONLY references, never as code to reproduce.
+  - NEVER redefine, redeclare, implement or duplicate dependency classes, interfaces, entities or use cases.
+  - NEVER generate abstract interfaces, stub classes, mocks or placeholder implementations for dependencies.
+  - Reference dependency types directly by their exact names and signatures.
+  - Do not invent missing dependencies, classes, constructors, methods or APIs.
+  - Do not modify or extend the public contracts of dependencies.
+  - The CIDD assembler resolves imports for internal contract dependencies.
+
+  # OWNED WIDGETS
+  - All widgets listed in the screen specification belong to this contract unless explicitly declared as external dependencies.
+  - Implement all owned widgets in the same Dart source file.
+  - Additional private helper widgets are allowed when needed to implement the requested screen.
+  - Do not reference widgets that are not implemented in this file or provided through declared dependencies.
+  - Do not redefine widgets owned by other contracts.
+  - Do not generate placeholder widgets.
+
+  # DART SOURCE STRUCTURE
+  - Generate exactly the public screen class required by the contract.
+  - Additional classes are permitted ONLY for widgets owned by the same presentation contract.
+  - Do not declare any dependency type as a top-level class, abstract class, interface, enum or typedef.
+  - Use dependency type names directly without declaring their definitions locally.
+  - Keep all external dependency contracts outside the generated source file.
+  - Do not invent application-specific import paths.
+  - Use Flutter framework imports where necessary.
+
+  # OUTPUT
+  - Output only valid Dart source code.
+  - Do not output Markdown, explanations or code fences.
+  - Do not reproduce dependency definitions from the prompt.
+  - Do not include examples, test doubles or unrelated declarations.

@@ -99,29 +99,64 @@ def _code_with_imports(source: str, *, current: str, graph: dict, package: str) 
     return (combined + '\n' if combined else '') + body.lstrip('\n'), sorted(paths - existing)
 
 
+
 def _prepare_dependencies(graph: dict, output: Path) -> list[str]:
-    """Pin supported infrastructure packages in the *assembled copy only*."""
-    required = set()
+    """Pin supported infrastructure packages in the assembled copy only."""
+
+    required = {}
+
     for contract in graph['contracts']:
         if not contract['id'].startswith('infrastructure.'):
             continue
+
         try:
             spec = json.loads(contract['specification'])
         except (ValueError, TypeError) as exc:
-            raise AssemblyError(f"Invalid infrastructure specification: {contract['id']}") from exc
+            raise AssemblyError(
+                f"Invalid infrastructure specification: {contract['id']}"
+            ) from exc
+
         if spec.get('provider') == 'sqlite3':
-            required.add('sqlite3')
-    path = output / 'pubspec.yaml'
-    content = path.read_text(encoding='utf-8')
+            required.update({
+                'sqlite3': '3.8.0',
+                'path': '^1.9.0',
+                'path_provider': '^2.1.5',
+            })
+
+    pubspec = output / 'pubspec.yaml'
+    content = pubspec.read_text(encoding='utf-8')
     added = []
-    if 'sqlite3' in required and not re.search(r'(?m)^\s*sqlite3\s*:', content):
-        line = re.search(r'(?m)^dependencies:\s*(?:#.*)?$', content)
-        if not line:
-            raise AssemblyError('Cannot add sqlite3: missing dependencies section in pubspec.yaml')
-        content = content[:line.end()] + '\n  sqlite3: 3.8.0' + content[line.end():]
-        added.append('sqlite3: 3.8.0')
+
+    section = re.search(
+        r'(?m)^dependencies:\s*(?:#.*)?$',
+        content
+    )
+
+    if required and not section:
+        raise AssemblyError(
+            'Missing dependencies section in pubspec.yaml'
+        )
+
+    for package, version in required.items():
+        if re.search(
+            rf'(?m)^\s*{re.escape(package)}\s*:',
+            content
+        ):
+            continue
+
+        declaration = f'{package}: {version}'
+
+        content = (
+            content[:section.end()]
+            + f'\n  {declaration}'
+            + content[section.end():]
+        )
+
+        added.append(declaration)
+
     if added:
-        path.write_text(content, encoding='utf-8')
+        pubspec.write_text(content, encoding='utf-8')
+
     return added
 
 

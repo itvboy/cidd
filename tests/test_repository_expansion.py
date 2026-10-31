@@ -24,7 +24,7 @@ def provider(text):
 
 def test_expansion_seals_derived_repo_without_mutating_source():
     source=genome(); original=deepcopy(source)
-    output, usage=expand_repository_contracts(source, provider(json.dumps({'interface':'abstract class TodoRepository {\n Future<int> add(Todo todo);\n}'})))
+    output, usage=expand_repository_contracts(source, provider(json.dumps({'interface':'abstract class TodoRepository {\n int add(Todo todo);\n}'})))
     assert source == original
     graph=build_graph(output)
     assert len(graph.contracts)==3

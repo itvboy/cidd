@@ -73,13 +73,40 @@ def bootstrap_flutter(graph: dict, output: Path, package: str) -> dict:
     adapter_name = _class_name(adapter['id'], 'infrastructure')
     usecase_names = [_class_name(cid, 'application') for cid in usecases]
     imports = sorted([_path(cid, package) for cid in [screen['id'], adapter['id'], *usecases]])
-    lines = ["import 'package:flutter/material.dart';", "import 'package:sqlite3/sqlite3.dart';"]
+
+
+    imports = sorted([
+        _path(cid, package)
+        for cid in [screen['id'], adapter['id'], *usecases]
+    ])
+
+    lines = [
+        "import 'package:flutter/material.dart';",
+        "import 'package:sqlite3/sqlite3.dart';",
+        "import 'package:path/path.dart' as p;",
+        "import 'package:path_provider/path_provider.dart';",
+    ]
+
     lines += [f"import '{uri}';" for uri in imports]
-    lines += ['', 'void main() {', '  WidgetsFlutterBinding.ensureInitialized();',
-              "  final database = sqlite3.open('app.db');",
-              f'  final repository = {adapter_name}(database);', '',
-              '  runApp(MaterialApp(', '    debugShowCheckedModeBanner: false,',
-              f"    title: '{package}',", f'    home: {screen_name}(']
+
+    lines += [
+        '',
+        'Future<void> main() async {',
+        '  WidgetsFlutterBinding.ensureInitialized();',
+        '',
+        '  final directory = await getApplicationSupportDirectory();',
+        "  final databasePath = p.join(directory.path, 'app.db');",
+        '  final database = sqlite3.open(databasePath);',
+        '',
+        f'  final repository = {adapter_name}(database);',
+        '',
+        '  runApp(MaterialApp(',
+        '    debugShowCheckedModeBanner: false,',
+        f"    title: '{package}',",
+        f'    home: {screen_name}(',
+    ]
+
+    
     for name in usecase_names:
         lines.append(f'      {_variable(name)}: {name}(repository),')
     lines += ['    ),', '  ));', '}', '']

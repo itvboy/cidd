@@ -17,7 +17,7 @@ class IsolatedWorker:
     def generate(self, contract: SealedContract) -> WorkerResult:
         if not isinstance(contract, SealedContract):
             raise TypeError("A SealedContract is required")
-        system_prompt = ("""You are an expert code generator.
+        system_prompt = ("""You are an expert code generator in Flutter.
 
             Implement exactly one software contract using the provided
             specification, public interfaces, and implementation skill.

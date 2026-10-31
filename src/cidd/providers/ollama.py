@@ -10,7 +10,6 @@ class OllamaProvider(LLMProvider):
     def __init__(
         self,
         model: str = "muse-glimmer",
-        #model: str = "qwen3-coder-next",
         base_url: str = "http://localhost:11434",
         timeout: float = 180.0,
     ) -> None:
@@ -24,7 +23,10 @@ class OllamaProvider(LLMProvider):
             "stream": False,
             "think": False,
             "options": {
-                "num_ctx": 4096,
+                "temperature": 0.0,
+                "seed": 42,
+                "top_k": 1,
+                "num_ctx": 8192
             },
             "messages": [
                 {"role": "system", "content": system_prompt},

@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+import time
 
 from cidd.engine.templates import create_project
 from cidd.contracts.materializer import build_graph, write_graph
@@ -118,6 +119,7 @@ def main() -> None:
         print(f"Fingerprint: {graph.fingerprint}")
         print(f"Written: {args.output}")
     elif args.command == "generate":
+        start_time = time.perf_counter()
         try:
             if args.force and args.snapshot is not None:
                 parser.error("--force and --snapshot cannot be combined")
@@ -174,10 +176,17 @@ def main() -> None:
         except (GenerationError, OSError, ValueError) as error:
             print(f"[FAIL] {error}")
             raise SystemExit(1) from error
+
         for item in report["results"]:
             print(f"[{item['status']}] {item['id']} input={item['input_tokens']} output={item['output_tokens']}")
+
         print(f"Tokens: input={report['input_tokens']} output={report['output_tokens']}")
+
+        elapsed_seconds = time.perf_counter() - start_time
+        print(f"Time elapsed: {elapsed_seconds:.0f} s")
+
         print(f"Staging: {report['run_dir']}")
+
         if any(
             item["status"] not in ("GENERATED", "REUSED")
             for item in report["results"]
