@@ -1,3 +1,21 @@
+<p align="center">
+  <img
+    src="assets/cidd-banner.png"
+    alt="CIDD — Contract-Isolated Driven Development"
+    width="100%"
+  />
+</p>
+
+<p align="center">
+  <strong>The project grows. The worker's context doesn't.</strong>
+</p>
+
+<p align="center">
+  A contract-driven software generation engine
+  powered by isolated LLM workers.
+</p>
+
+
 # CIDD
 
 Contract Isolated Driven Development
