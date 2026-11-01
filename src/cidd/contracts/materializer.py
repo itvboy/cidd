@@ -19,16 +19,32 @@ SECTIONS = (("domain", "entities"), ("application", "use_cases"),
 class ContractGraph:
     contracts: tuple[SealedContract, ...]
     fingerprint: str
+    presentation: dict | None = None
 
     def to_dict(self) -> dict:
-        return {"schema": "cidd.contract-graph/0.1", "fingerprint": self.fingerprint,
-                "contracts": [
-                    {"id": c.contract_id, "language": c.language,
-                     "specification": c.specification, "skill": c.skill,
-                     "dependencies": [{"id": d.contract_id, "interface": d.interface}
-                                      for d in c.dependencies]}
-                    for c in self.contracts]}
-
+        result = {
+            "schema": "cidd.contract-graph/0.1",
+            "fingerprint": self.fingerprint,
+            "contracts": [
+                {
+                    "id": c.contract_id,
+                    "language": c.language,
+                    "specification": c.specification,
+                    "skill": c.skill,
+                    "dependencies": [
+                        {
+                            "id": d.contract_id,
+                            "interface": d.interface,
+                        }
+                        for d in c.dependencies
+                    ],
+                }
+                for c in self.contracts
+            ],
+        }
+        if self.presentation is not None:
+            result["presentation"] = self.presentation
+        return result
 
 def _name(entry: dict, location: str) -> str:
     value = entry.get("id", entry.get("name"))
@@ -252,6 +268,107 @@ def derive_dependency_type_context(
         "Nullable values must be checked before use as non-null values."
     )
 
+def _presentation_metadata(genome: dict) -> dict | None:
+    presentation = genome["presentation"]
+    screens = presentation["screens"]
+
+    names = [_name(s, "presentation.screens") for s in screens]
+    if len(names) != len(set(names)):
+        raise GenomeError("Duplicate presentation screen")
+
+    known = set(names)
+    entry = presentation.get("entry_screen")
+
+    if entry is None:
+        if len(names) > 1:
+            raise GenomeError(
+                "Multiple screens require presentation.entry_screen"
+            )
+        
+    elif entry not in known:
+        raise GenomeError(f"Unknown entry screen: {entry}")
+
+    assets = presentation.get("assets", [])
+    if not isinstance(assets, list):
+        raise GenomeError("presentation.assets must be a list")
+
+    paths = set()
+    for asset in assets:
+        if not isinstance(asset, dict):
+            raise GenomeError("Invalid asset declaration")
+
+        path = asset.get("path")
+        if (
+            not isinstance(path, str)
+            or not path.startswith("assets/")
+            or "\\" in path
+            or ".." in path.split("/")
+            or not all(path.split("/"))
+        ):
+            raise GenomeError(f"Invalid asset path: {path!r}")
+
+        if asset.get("type") != "image" or path in paths:
+            raise GenomeError(f"Invalid or duplicate image asset: {path}")
+
+        paths.add(path)
+
+    for screen in screens:
+        name = _name(screen, "presentation.screens")
+        navigation = screen.get("navigation", {})
+
+        if not isinstance(navigation, dict):
+            raise GenomeError(f"{name}: invalid navigation")
+
+        targets = []
+
+        if "on_start" in navigation:
+            start = navigation["on_start"]
+            if not isinstance(start, dict):
+                raise GenomeError(f"{name}: invalid on_start")
+
+            targets.append(start.get("to"))
+            delay = start.get("delay_ms", 0)
+
+            if type(delay) is not int or delay < 0:
+                raise GenomeError(f"{name}: invalid delay_ms")
+
+        if "actions" in navigation:
+            actions = navigation["actions"]
+            if not isinstance(actions, list):
+                raise GenomeError(f"{name}: invalid actions")
+
+            for action in actions:
+                if not isinstance(action, dict):
+                    raise GenomeError(f"{name}: invalid action")
+                targets.append(action.get("to"))
+
+        if "back" in navigation and type(navigation["back"]) is not bool:
+            raise GenomeError(f"{name}: navigation.back must be boolean")
+
+        for target in targets:
+            if target not in known:
+                raise GenomeError(
+                    f"{name}: unknown navigation target {target!r}"
+                )
+
+        image = screen.get("image")
+        if image is not None and image not in paths:
+            raise GenomeError(
+                f"{name}: undeclared image asset {image!r}"
+            )
+
+    # Preserve the legacy single-screen graph format.
+    if not names and not assets:
+        return None
+
+    if entry is None and not assets:
+        return None
+
+    return {
+        "entry_screen": entry or names[0],
+        "assets": assets,
+    }
+
 def build_graph(genome: dict) -> ContractGraph:
     validate_genome(genome)
     indexed = {}
@@ -422,13 +539,48 @@ def build_graph(genome: dict) -> ContractGraph:
         contracts.append(SealedContract(identifier, language, specification,
                                         tuple(dependencies), skill))
 
-    payload = json.dumps([{
-        "id": c.contract_id, "language": c.language, "specification": c.specification,
-        "skill": c.skill, "dependencies": [(d.contract_id, d.interface) for d in c.dependencies]
-    } for c in contracts], sort_keys=True, ensure_ascii=False, separators=(',', ':'))
-    fingerprint = hashlib.sha256(payload.encode('utf-8')).hexdigest()
-    return ContractGraph(tuple(contracts), fingerprint)
+    contract_data = [
+        {
+            "id": c.contract_id,
+            "language": c.language,
+            "specification": c.specification,
+            "skill": c.skill,
+            "dependencies": [
+                (d.contract_id, d.interface)
+                for d in c.dependencies
+            ],
+        }
+        for c in contracts
+    ]
 
+    presentation = _presentation_metadata(genome)
+
+    # Keep old single-screen fingerprints unchanged.
+    fingerprint_data = (
+        contract_data
+        if presentation is None
+        else {
+            "contracts": contract_data,
+            "presentation": presentation,
+        }
+    )
+
+    payload = json.dumps(
+        fingerprint_data,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+    fingerprint = hashlib.sha256(
+        payload.encode("utf-8")
+    ).hexdigest()
+
+    return ContractGraph(
+        tuple(contracts),
+        fingerprint,
+        presentation,
+    )
 
 def write_graph(graph: ContractGraph, path: Path) -> None:
     """Atomic graph replacement; never touch generated implementation files."""
