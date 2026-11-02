@@ -68,18 +68,14 @@ Unlike traditional autonomous agent architectures that bloat the context window,
 
   <br />
 
-  <!-- BIG HERO METRIC HERO -->
-  <div style="background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%); border: 1px solid #312e81; padding: 25px; border-radius: 10px; margin: 25px 0; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
-    <div style="font-size: 13px; text-transform: uppercase; letter-spacing: 2px; color: #818cf8; font-weight: bold; margin-bottom: 5px;">
-      APLASTANTEMENTE DISRUPTIVO
-    </div>
-    <div style="font-size: 64px; font-weight: 900; color: #38bdf8; font-family: -apple-system, sans-serif; line-height: 1; margin: 10px 0;">
-      -99.4%
-    </div>
-    <div style="font-size: 18px; font-weight: bold; color: #f0f6fc; margin-bottom: 8px;">
-      Token Overhead Reduction
-    </div>
-    <p style="margin: 0 auto; color: #94a3b8; font-size: 14px; max-width: 500px; line-height: 1.5;">
+  <!-- BIG HERO METRIC HERO (OPTIMIZED FOR GITHUB) -->
+  <div align="center">
+    <h3>🚀 APLASTANTEMENTE DISRUPTIVO</h3>
+    <h1>
+      <font size="7" color="#38bdf8"><b>-99.4%</b></font>
+    </h1>
+    <h2><b>Token Overhead Reduction</b></h2>
+    <p style="color: #94a3b8; font-size: 15px; max-width: 600px;">
       CIDD eliminates the multi-agent cognitive overhead entirely, delivering flawless, deterministic compilation with local infrastructure at zero cost.
     </p>
   </div>
@@ -88,3 +84,4 @@ Unlike traditional autonomous agent architectures that bloat the context window,
 
 </div>
 <!-- END OF EVALUATION SECTION -->
+
