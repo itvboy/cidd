@@ -72,7 +72,7 @@ Unlike traditional autonomous agent architectures that bloat the context window,
   <div align="center">
     <h3>🚀 APLASTANTEMENTE DISRUPTIVO</h3>
     <h1>
-      <font size="7" color="#38bdf8"><b>-99.4%</b></font>
+      <font size="8" color="#38bdf8"><b>-99.4%</b></font>
     </h1>
     <h2><b>Token Overhead Reduction</b></h2>
     <p style="color: #94a3b8; font-size: 15px; max-width: 600px;">
