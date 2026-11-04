@@ -1,4 +1,4 @@
-"""Graph-verified generation into a staging area. Never alters application sources."""
+﻿"""Graph-verified generation into a staging area. Never alters application sources."""
 from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
@@ -138,6 +138,8 @@ def generate_graph(graph_path: Path, output_dir: Path, provider: LLMProvider) ->
     # Exact sealed graph provenance for safe future selective reuse.
     import shutil as _snapshot_shutil
     _snapshot_shutil.copyfile(graph_path, run_dir / "sealed-graph.json")
+    print("\nCIDD 0.1 - Contract Generation", flush=True)
+    print(f"Processing {len(contracts)} contracts. This may take a few minutes...\n", flush=True)
     for contract in contracts:
         start = time.perf_counter()
         entry = {"id": contract.contract_id, "status": "FAILED", "input_tokens": None,
@@ -242,3 +244,4 @@ def generate_graph(graph_path: Path, output_dir: Path, provider: LLMProvider) ->
         _tokens = (_progress.get('input_tokens') or 0) + (_progress.get('output_tokens') or 0)
         print(f"[{len(results):02d}/{len(contracts):02d}] {_progress['status']:<9} {_progress['id']:<40} {_tokens:,} tokens", flush=True)
     return {**manifest, "run_dir": str(run_dir)}
+

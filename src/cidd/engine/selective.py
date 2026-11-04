@@ -1,4 +1,4 @@
-"""Provenance-checked CIDD selective generation (experimental CLI).
+﻿"""Provenance-checked CIDD selective generation (experimental CLI).
 
 python -m cidd.engine.selective --graph .cidd/contract-graph.json \
     --reuse-run .cidd/generated-runs/BASELINE --output .cidd/generated-runs
@@ -94,6 +94,8 @@ def selective_generate(graph_path: Path, previous_run: Path, output_root: Path, 
     worker = IsolatedWorker(recording_provider)
 
     results = []
+    print("\nCIDD 0.1 - Contract Generation", flush=True)
+    print(f"Processing {len(contracts)} contracts. This may take a few minutes...\n", flush=True)
     for contract in contracts:
         cid = contract.contract_id
         target_rel = _source_path(cid, contract.language)
@@ -227,3 +229,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
