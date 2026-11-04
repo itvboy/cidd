@@ -46,6 +46,7 @@ class MetaProvider(LLMProvider):
             "reasoning": {
                 "effort": self.reasoning_effort
             },
+            "temperature": 0.0,
             "max_output_tokens": self.max_output_tokens,
             "store": False,
         }

@@ -244,4 +244,3 @@ def generate_graph(graph_path: Path, output_dir: Path, provider: LLMProvider) ->
         _tokens = (_progress.get('input_tokens') or 0) + (_progress.get('output_tokens') or 0)
         print(f"[{len(results):02d}/{len(contracts):02d}] {_progress['status']:<9} {_progress['id']:<40} {_tokens:,} tokens", flush=True)
     return {**manifest, "run_dir": str(run_dir)}
-

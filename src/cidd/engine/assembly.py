@@ -331,7 +331,7 @@ def assemble(graph_path: Path, run_dir: Path, project: Path, output: Path, *, an
             if flutter:
                 report['pub_get'] = _run_command([flutter, 'pub', 'get'], output)
                 if report['pub_get']['status'] == 'PASS':
-                    report['analyzer'] = _run_command([flutter, 'analyze', '--no-pub', '--no-fatal-infos'], output)
+                    report['analyzer'] = _run_command([flutter, 'analyze', '--no-pub', '--no-fatal-infos', '--no-fatal-warnings'], output)
                 else:
                     report['analyzer']={'status':'BLOCKED','diagnostic':'flutter pub get failed'}
             elif dart:

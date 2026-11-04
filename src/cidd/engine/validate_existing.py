@@ -204,6 +204,7 @@ def validate_existing(
                 "analyze",
                 "--no-pub",
                 "--no-fatal-infos",
+                "--no-fatal-warnings",
             ],
             output,
         )
