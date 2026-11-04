@@ -255,9 +255,6 @@ def main() -> None:
             print(f"[FAIL] {error}")
             raise SystemExit(1) from error
 
-        for item in report["results"]:
-            print(f"[{item['status']}] {item['id']} input={item['input_tokens']} output={item['output_tokens']}")
-
         print(f"Tokens: input={report['input_tokens']} output={report['output_tokens']}")
 
         elapsed_seconds = time.perf_counter() - start_time

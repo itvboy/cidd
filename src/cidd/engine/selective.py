@@ -187,6 +187,10 @@ def selective_generate(graph_path: Path, previous_run: Path, output_root: Path, 
                 'output_tokens':sum((x.get('output_tokens') or 0) for x in results),
                 'token_counts_complete':all(x.get('status') != 'FAILED' for x in results)}
             (run_dir / 'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+            # CIDD LIVE PROGRESS: report completed contract.
+            _progress = item
+            _tokens = (_progress.get('input_tokens') or 0) + (_progress.get('output_tokens') or 0)
+            print(f"[{len(results):02d}/{len(contracts):02d}] {_progress['status']:<9} {_progress['id']:<40} {_tokens:,} tokens", flush=True)
     return {**manifest, 'run_dir':str(run_dir)}
 
 

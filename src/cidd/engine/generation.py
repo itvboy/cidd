@@ -237,4 +237,8 @@ def generate_graph(graph_path: Path, output_dir: Path, provider: LLMProvider) ->
                     "output_tokens": sum(x["output_tokens"] or 0 for x in results),
                     "token_counts_complete": all(x["input_tokens"] is not None and x["output_tokens"] is not None for x in results)}
         (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        # CIDD LIVE PROGRESS: report completed contract.
+        _progress = entry
+        _tokens = (_progress.get('input_tokens') or 0) + (_progress.get('output_tokens') or 0)
+        print(f"[{len(results):02d}/{len(contracts):02d}] {_progress['status']:<9} {_progress['id']:<40} {_tokens:,} tokens", flush=True)
     return {**manifest, "run_dir": str(run_dir)}
