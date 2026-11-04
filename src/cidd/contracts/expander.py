@@ -11,25 +11,39 @@ import re
 from cidd.genome.parser import GenomeError
 from cidd.providers.base import LLMProvider, LLMResponse
 
+
 DART_REPOSITORY_RULES = """Derive a Dart repository interface from the entity and use cases.
-Only include persistence operations required by those use cases.
+Only include operations required by those use cases.
 Do not copy use-case names into repository methods.
 No implementation, SQL, business workflows, extra classes, imports or markdown.
-Use explicit Dart parameter and return types. Prefer add/update over generic upsert.
-The repository uses synchronous native SQLite operations.
-All repository methods MUST be synchronous.
-Do not use Future, FutureOr, Stream, async, or asynchronous return types.
-Return concrete Dart types directly.
+Use explicit Dart parameter and return types.
+{execution_rules}
 Return one valid JSON object with one key: interface.
 The interface must be a Dart abstract class named {repository_name}.
 """
+
+SYNC_REPOSITORY_RULES = """The repository uses synchronous native SQLite operations.
+All repository methods MUST be synchronous.
+Do not use Future, FutureOr, Stream, async, or asynchronous return types.
+Return concrete Dart types directly."""
+
+ASYNC_REPOSITORY_RULES = """The repository uses asynchronous remote HTTP operations.
+ALL repository methods MUST return Future<T>.
+Use Future<Ride> for individual rides.
+Use Future<List<Ride>> for collections.
+Do not use synchronous return types, FutureOr, Stream, or void.
+Do not implement HTTP requests here; return only abstract method signatures."""
 
 
 def _contract_name(entry: dict) -> str:
     return entry.get('id') or entry.get('name') or ''
 
 
-def _extract_interface(raw: str, expected_name: str) -> str:
+def _extract_interface(
+    raw: str,
+    expected_name: str,
+    asynchronous: bool = False,
+) -> str:
     try:
         value = json.loads(raw.strip())
     except json.JSONDecodeError as exc:
@@ -49,12 +63,28 @@ def _extract_interface(raw: str, expected_name: str) -> str:
     if not lines or any(not line.endswith(';') or '(' not in line or ')' not in line for line in lines):
         raise GenomeError('Repository expansion: expected abstract method signatures only')
 
-    if re.search(r'\b(?:Future|FutureOr|Stream)\b|\basync\b', code):
-        raise GenomeError(
-            f"Repository expansion: {expected_name} must use "
-            "synchronous method signatures for native SQLite"
-        )
-    
+
+    if asynchronous:
+        if re.search(r'\b(?:FutureOr|Stream)\b|\basync\b', code):
+            raise GenomeError(
+                "Repository expansion: unsupported asynchronous type"
+            )
+
+        if any(
+            re.match(r'^Future<.+>\s+\w+\s*\(', line) is None
+            for line in lines
+        ):
+            raise GenomeError(
+                f"Repository expansion: {expected_name} "
+                "requires Future<T> for every method"
+            )
+    else:
+        if re.search(r'\b(?:Future|FutureOr|Stream)\b|\basync\b', code):
+            raise GenomeError(
+                f"Repository expansion: {expected_name} must use "
+                "synchronous method signatures"
+            )
+
     return code
 
 
@@ -78,11 +108,52 @@ def expand_repository_contracts(genome: dict, provider: LLMProvider) -> tuple[di
         raise GenomeError('Entity requires name')
     repo_name = entity_name + 'Repository'
     repo_id = 'domain.' + repo_name
+
+
+    adapters = expanded.get('infrastructure', {}).get('persistence', [])
+
+    # Backward compatibility:
+    # Legacy genomes without an infrastructure provider remain synchronous.
+    providers = {
+        adapter.get('provider', 'sqlite3')
+        for adapter in adapters
+    }
+
+    if not providers:
+        providers = {'sqlite3'}
+
+    if len(providers) != 1 or not providers.issubset({'sqlite3', 'http'}):
+        raise GenomeError(
+            'Repository expansion supports one provider: sqlite3 or http'
+        )
+
+    asynchronous = providers == {'http'}
+
+    execution_rules = (
+        ASYNC_REPOSITORY_RULES
+        if asynchronous
+        else SYNC_REPOSITORY_RULES
+    )
+
     if any(_contract_name(item) == repo_name for item in entities):
         raise GenomeError(f'{repo_id}: already declared; repository must be derived')
     prompt = json.dumps({'entity': entity, 'use_cases': use_cases}, ensure_ascii=False, sort_keys=True)
-    response = provider.generate(DART_REPOSITORY_RULES.format(repository_name=repo_name), prompt)
-    interface = _extract_interface(response.content, repo_name)
+
+
+    response = provider.generate(
+        DART_REPOSITORY_RULES.format(
+            repository_name=repo_name,
+            execution_rules=execution_rules,
+        ),
+        prompt,
+    )
+
+    interface = _extract_interface(
+        response.content,
+        repo_name,
+        asynchronous=asynchronous,
+    )
+
     entities.append({'name': repo_name, 'interface': interface,
                      'description': f'Derived repository interface for {entity_name}',
                      'depends_on': ['domain.' + entity_name]})

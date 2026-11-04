@@ -20,6 +20,7 @@ from cidd.workers.isolated import IsolatedWorker
 from cidd.providers.factory import create_provider
 from cidd.engine.assembly import assemble
 from cidd.providers.base import LLMProvider, LLMResponse
+from cidd.engine.integrations import allowed_external_imports
 
 def _json(path):
     return json.loads(Path(path).read_text(encoding='utf-8'))
@@ -160,7 +161,12 @@ def retry_once(
                 if contract.language.lower() == 'dart':
                     source = sanitize_dart(response.content, contract_id=cid,
                         dependencies=tuple(d.contract_id for d in contract.dependencies),
-                        all_contract_ids=tuple(c.contract_id for c in contracts), package_name=package).source
+                        all_contract_ids=tuple(c.contract_id for c in contracts), package_name=package,
+                        allowed_external=allowed_external_imports({
+                            "id": contract.contract_id,
+                            "specification": contract.specification,
+                        }),
+                    ).source
                 else:
                     source = response.content.strip() + '\n'
                 if not source.strip() or '```' in source:

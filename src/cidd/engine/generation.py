@@ -11,6 +11,7 @@ from datetime import datetime
 from cidd.contracts.sealed import ContractDependency, SealedContract
 from cidd.workers.isolated import IsolatedWorker
 from cidd.providers.base import LLMProvider
+from cidd.engine.integrations import allowed_external_imports
 
 # Local debugging; never affects the model's input or generated source.
 INCLUDE_DEBUG_CONTEXT = True
@@ -61,11 +62,44 @@ def load_verified_graph(path: Path) -> tuple[SealedContract, ...]:
         contracts.append(SealedContract(cid, item["language"], item["specification"], deps, item["skill"]))
     if not isinstance(data.get("contracts"), list):
         raise GenerationError("Missing contracts list")
-    payload = json.dumps([{
-        "id": c.contract_id, "language": c.language, "specification": c.specification,
-        "skill": c.skill, "dependencies": [(d.contract_id, d.interface) for d in c.dependencies]
-    } for c in contracts], sort_keys=True, ensure_ascii=False, separators=(',', ':'))
-    computed = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+    contract_data = [
+        {
+            "id": c.contract_id,
+            "language": c.language,
+            "specification": c.specification,
+            "skill": c.skill,
+            "dependencies": [
+                (d.contract_id, d.interface)
+                for d in c.dependencies
+            ],
+        }
+        for c in contracts
+    ]
+
+    presentation = data.get("presentation")
+
+    fingerprint_data = (
+        contract_data
+        if presentation is None
+        else {
+            "contracts": contract_data,
+            "presentation": presentation,
+        }
+    )
+
+    payload = json.dumps(
+        fingerprint_data,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+    computed = hashlib.sha256(
+        payload.encode("utf-8")
+    ).hexdigest()
+
     if computed != data.get("fingerprint"):
         raise GenerationError("Graph fingerprint mismatch: rerun cidd build-graph")
     return tuple(contracts)
@@ -143,6 +177,10 @@ def generate_graph(graph_path: Path, output_dir: Path, provider: LLMProvider) ->
                         dependencies=tuple(d.contract_id for d in contract.dependencies),
                         all_contract_ids=_all_ids,
                         package_name=_package_name,
+                        allowed_external=allowed_external_imports({
+                            "id": contract.contract_id,
+                            "specification": contract.specification,
+                        }),
                     )
                 except SanitizationError as exc:
                     # A sanitization failure is still a rejected model response.

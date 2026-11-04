@@ -7,7 +7,7 @@ rules:
   - Implement a real Flutter Widget (StatelessWidget or StatefulWidget as appropriate).
   - Build the requested screen using Flutter widgets such as Scaffold.
   - Preserve the requested screen behaviors and widget hierarchy.
-  - Render the screen title as "My Tasks".
+  - Render the screen title exactly as specified by the sealed contract.
   - Connect screen interactions to the provided use-case interfaces.
   - Preserve required public constructors and method signatures.
 
@@ -44,3 +44,12 @@ rules:
   - Do not output Markdown, explanations or code fences.
   - Do not reproduce dependency definitions from the prompt.
   - Do not include examples, test doubles or unrelated declarations.
+
+  # DART IMPORT RULES:
+  - Never invent Dart SDK import URIs.
+  - Valid Dart SDK imports use the dart:library format.
+  - Never use spaces in import URIs.
+  - Use distinct aliases for distinct imported libraries.
+  - Prefer unaliased internal dependency references.
+  - The deterministic assembler resolves internal dependency imports.
+  - Output valid Dart source without Markdown fences.

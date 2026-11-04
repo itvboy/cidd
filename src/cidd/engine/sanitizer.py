@@ -115,7 +115,15 @@ def sanitize_dart(raw: str, *, contract_id: str, dependencies: tuple[str, ...],
             if len(candidates) == 1:
                 resolved = candidates[0]
         if resolved is None:
-            if uri.startswith(_EXTERNAL_PREFIXES) or uri in allowed_external:
+            if (
+                uri.startswith(_EXTERNAL_PREFIXES)
+                or any(
+                    uri.startswith(prefix)
+                    if prefix.endswith("/")
+                    else uri == prefix
+                    for prefix in allowed_external
+                )
+            ):
                 resolved = uri
             else:
                 raise SanitizationError(f'Unknown or undeclared import: {uri}')

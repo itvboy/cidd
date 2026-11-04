@@ -1,0 +1,202 @@
+{
+  "schema": "cidd.contract-graph/0.1",
+  "fingerprint": "6c14e32054f245cdfca9f73843b187b9ecf422a678acde8b48711a0cf315bf09",
+  "contracts": [
+    {
+      "id": "application.AcceptRide",
+      "language": "dart",
+      "specification": "{\"depends_on\":[\"domain.Ride\",\"domain.RideRepository\"],\"description\":\"Accept a ride through the backend\",\"input\":{\"driverId\":\"int\",\"rideId\":\"int\"},\"interface\":\"// CIDD SEALED PUBLIC API: AcceptRide\\n// Required public constructor: AcceptRide(RideRepository repository)\\nabstract interface class AcceptRide {\\n  Future<Ride> execute(int rideId, int driverId);\\n}\",\"name\":\"AcceptRide\",\"output\":\"Ride\",\"rules\":[\"Delegate acceptance to RideRepository.\",\"Return the server-provided Ride.\",\"The server owns transition validation and concurrency.\"]}",
+      "skill": "- Implement exactly one use-case class and all specified business rules.\n- Depend only on provided public interfaces and never redefine dependencies.\n- Do not invent repository operations or change their signatures, including Future and nullability.\n- Follow the provided entity constructor contract; do not guess positional versus named arguments.\n- Keep persistence implementation outside the use case.\n- Preserve idempotency and failure rules from the specification.\n- Output only Dart source code without markdown.\n- Implement the sealed specification.interface precisely: public execute method, parameter types, return type and required repository constructor. Do not change synchronous methods to Future unless the interface says so.",
+      "dependencies": [
+        {
+          "id": "domain.Ride",
+          "interface": "class Ride {\n  final int? id;\n  final int passengerId;\n  final int? driverId;\n  final String status;\n  Ride({this.id, required this.passengerId, this.driverId, this.status = \"REQUESTED\"});\n}"
+        },
+        {
+          "id": "domain.RideRepository",
+          "interface": "abstract class RideRepository {\n  Future<Ride> createRide(int passengerId);\n  Future<List<Ride>> getAvailableRides();\n  Future<Ride> getRide(int rideId);\n  Future<Ride> acceptRide(int rideId, int driverId);\n  Future<Ride> startRide(int rideId, int driverId);\n  Future<Ride> completeRide(int rideId, int driverId);\n  Future<Ride> cancelRide(int rideId);\n}"
+        }
+      ]
+    },
+    {
+      "id": "application.CancelRide",
+      "language": "dart",
+      "specification": "{\"depends_on\":[\"domain.Ride\",\"domain.RideRepository\"],\"description\":\"Cancel an eligible ride through the backend\",\"input\":{\"rideId\":\"int\"},\"interface\":\"// CIDD SEALED PUBLIC API: CancelRide\\n// Required public constructor: CancelRide(RideRepository repository)\\nabstract interface class CancelRide {\\n  Future<Ride> execute(int rideId);\\n}\",\"name\":\"CancelRide\",\"output\":\"Ride\",\"rules\":[\"Delegate cancellation to RideRepository.\",\"Return the server-provided Ride.\",\"The server decides whether cancellation is allowed.\"]}",
+      "skill": "- Implement exactly one use-case class and all specified business rules.\n- Depend only on provided public interfaces and never redefine dependencies.\n- Do not invent repository operations or change their signatures, including Future and nullability.\n- Follow the provided entity constructor contract; do not guess positional versus named arguments.\n- Keep persistence implementation outside the use case.\n- Preserve idempotency and failure rules from the specification.\n- Output only Dart source code without markdown.\n- Implement the sealed specification.interface precisely: public execute method, parameter types, return type and required repository constructor. Do not change synchronous methods to Future unless the interface says so.",
+      "dependencies": [
+        {
+          "id": "domain.Ride",
+          "interface": "class Ride {\n  final int? id;\n  final int passengerId;\n  final int? driverId;\n  final String status;\n  Ride({this.id, required this.passengerId, this.driverId, this.status = \"REQUESTED\"});\n}"
+        },
+        {
+          "id": "domain.RideRepository",
+          "interface": "abstract class RideRepository {\n  Future<Ride> createRide(int passengerId);\n  Future<List<Ride>> getAvailableRides();\n  Future<Ride> getRide(int rideId);\n  Future<Ride> acceptRide(int rideId, int driverId);\n  Future<Ride> startRide(int rideId, int driverId);\n  Future<Ride> completeRide(int rideId, int driverId);\n  Future<Ride> cancelRide(int rideId);\n}"
+        }
+      ]
+    },
+    {
+      "id": "application.CompleteRide",
+      "language": "dart",
+      "specification": "{\"depends_on\":[\"domain.Ride\",\"domain.RideRepository\"],\"description\":\"Complete a ride through the backend\",\"input\":{\"driverId\":\"int\",\"rideId\":\"int\"},\"interface\":\"// CIDD SEALED PUBLIC API: CompleteRide\\n// Required public constructor: CompleteRide(RideRepository repository)\\nabstract interface class CompleteRide {\\n  Future<Ride> execute(int rideId, int driverId);\\n}\",\"name\":\"CompleteRide\",\"output\":\"Ride\",\"rules\":[\"Delegate completion to RideRepository.\",\"Return the server-provided Ride.\",\"The server owns status transition validation.\"]}",
+      "skill": "- Implement exactly one use-case class and all specified business rules.\n- Depend only on provided public interfaces and never redefine dependencies.\n- Do not invent repository operations or change their signatures, including Future and nullability.\n- Follow the provided entity constructor contract; do not guess positional versus named arguments.\n- Keep persistence implementation outside the use case.\n- Preserve idempotency and failure rules from the specification.\n- Output only Dart source code without markdown.\n- Implement the sealed specification.interface precisely: public execute method, parameter types, return type and required repository constructor. Do not change synchronous methods to Future unless the interface says so.",
+      "dependencies": [
+        {
+          "id": "domain.Ride",
+          "interface": "class Ride {\n  final int? id;\n  final int passengerId;\n  final int? driverId;\n  final String status;\n  Ride({this.id, required this.passengerId, this.driverId, this.status = \"REQUESTED\"});\n}"
+        },
+        {
+          "id": "domain.RideRepository",
+          "interface": "abstract class RideRepository {\n  Future<Ride> createRide(int passengerId);\n  Future<List<Ride>> getAvailableRides();\n  Future<Ride> getRide(int rideId);\n  Future<Ride> acceptRide(int rideId, int driverId);\n  Future<Ride> startRide(int rideId, int driverId);\n  Future<Ride> completeRide(int rideId, int driverId);\n  Future<Ride> cancelRide(int rideId);\n}"
+        }
+      ]
+    },
+    {
+      "id": "application.GetRideStatus",
+      "language": "dart",
+      "specification": "{\"depends_on\":[\"domain.Ride\",\"domain.RideRepository\"],\"description\":\"Retrieve current remote ride status\",\"input\":{\"rideId\":\"int\"},\"interface\":\"// CIDD SEALED PUBLIC API: GetRideStatus\\n// Required public constructor: GetRideStatus(RideRepository repository)\\nabstract interface class GetRideStatus {\\n  Future<Ride> execute(int rideId);\\n}\",\"name\":\"GetRideStatus\",\"output\":\"Ride\",\"rules\":[\"Delegate lookup to RideRepository.\",\"Return the current server-provided ride.\",\"Do not cache the authoritative ride state.\"]}",
+      "skill": "- Implement exactly one use-case class and all specified business rules.\n- Depend only on provided public interfaces and never redefine dependencies.\n- Do not invent repository operations or change their signatures, including Future and nullability.\n- Follow the provided entity constructor contract; do not guess positional versus named arguments.\n- Keep persistence implementation outside the use case.\n- Preserve idempotency and failure rules from the specification.\n- Output only Dart source code without markdown.\n- Implement the sealed specification.interface precisely: public execute method, parameter types, return type and required repository constructor. Do not change synchronous methods to Future unless the interface says so.",
+      "dependencies": [
+        {
+          "id": "domain.Ride",
+          "interface": "class Ride {\n  final int? id;\n  final int passengerId;\n  final int? driverId;\n  final String status;\n  Ride({this.id, required this.passengerId, this.driverId, this.status = \"REQUESTED\"});\n}"
+        },
+        {
+          "id": "domain.RideRepository",
+          "interface": "abstract class RideRepository {\n  Future<Ride> createRide(int passengerId);\n  Future<List<Ride>> getAvailableRides();\n  Future<Ride> getRide(int rideId);\n  Future<Ride> acceptRide(int rideId, int driverId);\n  Future<Ride> startRide(int rideId, int driverId);\n  Future<Ride> completeRide(int rideId, int driverId);\n  Future<Ride> cancelRide(int rideId);\n}"
+        }
+      ]
+    },
+    {
+      "id": "application.ListAvailableRides",
+      "language": "dart",
+      "specification": "{\"depends_on\":[\"domain.Ride\",\"domain.RideRepository\"],\"description\":\"Retrieve available rides from the remote server\",\"input\":{},\"interface\":\"// CIDD SEALED PUBLIC API: ListAvailableRides\\n// Required public constructor: ListAvailableRides(RideRepository repository)\\nabstract interface class ListAvailableRides {\\n  Future<List<Ride>> execute();\\n}\",\"name\":\"ListAvailableRides\",\"output\":\"List<Ride>\",\"rules\":[\"Delegate the query to RideRepository.\",\"Return server-provided REQUESTED rides.\",\"Preserve ascending ID order.\"]}",
+      "skill": "- Implement exactly one use-case class and all specified business rules.\n- Depend only on provided public interfaces and never redefine dependencies.\n- Do not invent repository operations or change their signatures, including Future and nullability.\n- Follow the provided entity constructor contract; do not guess positional versus named arguments.\n- Keep persistence implementation outside the use case.\n- Preserve idempotency and failure rules from the specification.\n- Output only Dart source code without markdown.\n- Implement the sealed specification.interface precisely: public execute method, parameter types, return type and required repository constructor. Do not change synchronous methods to Future unless the interface says so.",
+      "dependencies": [
+        {
+          "id": "domain.Ride",
+          "interface": "class Ride {\n  final int? id;\n  final int passengerId;\n  final int? driverId;\n  final String status;\n  Ride({this.id, required this.passengerId, this.driverId, this.status = \"REQUESTED\"});\n}"
+        },
+        {
+          "id": "domain.RideRepository",
+          "interface": "abstract class RideRepository {\n  Future<Ride> createRide(int passengerId);\n  Future<List<Ride>> getAvailableRides();\n  Future<Ride> getRide(int rideId);\n  Future<Ride> acceptRide(int rideId, int driverId);\n  Future<Ride> startRide(int rideId, int driverId);\n  Future<Ride> completeRide(int rideId, int driverId);\n  Future<Ride> cancelRide(int rideId);\n}"
+        }
+      ]
+    },
+    {
+      "id": "application.RequestRide",
+      "language": "dart",
+      "specification": "{\"depends_on\":[\"domain.Ride\",\"domain.RideRepository\"],\"description\":\"Request a ride through the remote repository\",\"input\":{\"passengerId\":\"int\"},\"interface\":\"// CIDD SEALED PUBLIC API: RequestRide\\n// Required public constructor: RequestRide(RideRepository repository)\\nabstract interface class RequestRide {\\n  Future<Ride> execute(int passengerId);\\n}\",\"name\":\"RequestRide\",\"output\":\"Ride\",\"rules\":[\"Reject nonpositive passenger IDs.\",\"Delegate ride creation to RideRepository.\",\"Return the Ride received from the server.\",\"Do not create or persist local rides.\"]}",
+      "skill": "- Implement exactly one use-case class and all specified business rules.\n- Depend only on provided public interfaces and never redefine dependencies.\n- Do not invent repository operations or change their signatures, including Future and nullability.\n- Follow the provided entity constructor contract; do not guess positional versus named arguments.\n- Keep persistence implementation outside the use case.\n- Preserve idempotency and failure rules from the specification.\n- Output only Dart source code without markdown.\n- Implement the sealed specification.interface precisely: public execute method, parameter types, return type and required repository constructor. Do not change synchronous methods to Future unless the interface says so.",
+      "dependencies": [
+        {
+          "id": "domain.Ride",
+          "interface": "class Ride {\n  final int? id;\n  final int passengerId;\n  final int? driverId;\n  final String status;\n  Ride({this.id, required this.passengerId, this.driverId, this.status = \"REQUESTED\"});\n}"
+        },
+        {
+          "id": "domain.RideRepository",
+          "interface": "abstract class RideRepository {\n  Future<Ride> createRide(int passengerId);\n  Future<List<Ride>> getAvailableRides();\n  Future<Ride> getRide(int rideId);\n  Future<Ride> acceptRide(int rideId, int driverId);\n  Future<Ride> startRide(int rideId, int driverId);\n  Future<Ride> completeRide(int rideId, int driverId);\n  Future<Ride> cancelRide(int rideId);\n}"
+        }
+      ]
+    },
+    {
+      "id": "application.StartRide",
+      "language": "dart",
+      "specification": "{\"depends_on\":[\"domain.Ride\",\"domain.RideRepository\"],\"description\":\"Start an accepted ride through the backend\",\"input\":{\"driverId\":\"int\",\"rideId\":\"int\"},\"interface\":\"// CIDD SEALED PUBLIC API: StartRide\\n// Required public constructor: StartRide(RideRepository repository)\\nabstract interface class StartRide {\\n  Future<Ride> execute(int rideId, int driverId);\\n}\",\"name\":\"StartRide\",\"output\":\"Ride\",\"rules\":[\"Delegate start to RideRepository.\",\"Return the server-provided Ride.\",\"The server verifies the assigned driver.\"]}",
+      "skill": "- Implement exactly one use-case class and all specified business rules.\n- Depend only on provided public interfaces and never redefine dependencies.\n- Do not invent repository operations or change their signatures, including Future and nullability.\n- Follow the provided entity constructor contract; do not guess positional versus named arguments.\n- Keep persistence implementation outside the use case.\n- Preserve idempotency and failure rules from the specification.\n- Output only Dart source code without markdown.\n- Implement the sealed specification.interface precisely: public execute method, parameter types, return type and required repository constructor. Do not change synchronous methods to Future unless the interface says so.",
+      "dependencies": [
+        {
+          "id": "domain.Ride",
+          "interface": "class Ride {\n  final int? id;\n  final int passengerId;\n  final int? driverId;\n  final String status;\n  Ride({this.id, required this.passengerId, this.driverId, this.status = \"REQUESTED\"});\n}"
+        },
+        {
+          "id": "domain.RideRepository",
+          "interface": "abstract class RideRepository {\n  Future<Ride> createRide(int passengerId);\n  Future<List<Ride>> getAvailableRides();\n  Future<Ride> getRide(int rideId);\n  Future<Ride> acceptRide(int rideId, int driverId);\n  Future<Ride> startRide(int rideId, int driverId);\n  Future<Ride> completeRide(int rideId, int driverId);\n  Future<Ride> cancelRide(int rideId);\n}"
+        }
+      ]
+    },
+    {
+      "id": "domain.Ride",
+      "language": "dart",
+      "specification": "{\"description\":\"Remote taxi ride representation. Status is REQUESTED, ACCEPTED, IN_PROGRESS, COMPLETED, or CANCELLED. Identifiers and status values are supplied by the server.\",\"fields\":[{\"name\":\"id\",\"nullable\":true,\"type\":\"int\"},{\"name\":\"passengerId\",\"required\":true,\"type\":\"int\"},{\"name\":\"driverId\",\"nullable\":true,\"type\":\"int\"},{\"default\":\"REQUESTED\",\"name\":\"status\",\"type\":\"string\"}],\"interface\":\"class Ride {\\n  final int? id;\\n  final int passengerId;\\n  final int? driverId;\\n  final String status;\\n  Ride({this.id, required this.passengerId, this.driverId, this.status = \\\"REQUESTED\\\"});\\n}\",\"name\":\"Ride\"}",
+      "skill": "- Preserve every field, type, nullability and default from the specification.\n- Provide a named-parameter constructor consistent with all fields; required fields must be required.\n- Expose the public fields and constructor without inventing new public members.\n- Use immutable final fields.\n- Do not generate serialization, persistence, or unrelated helpers.\n- Do not redefine dependency types.\n- Output only Dart source code without markdown.",
+      "dependencies": []
+    },
+    {
+      "id": "domain.RideRepository",
+      "language": "dart",
+      "specification": "{\"depends_on\":[\"domain.Ride\"],\"description\":\"Derived repository interface for Ride\",\"interface\":\"abstract class RideRepository {\\n  Future<Ride> createRide(int passengerId);\\n  Future<List<Ride>> getAvailableRides();\\n  Future<Ride> getRide(int rideId);\\n  Future<Ride> acceptRide(int rideId, int driverId);\\n  Future<Ride> startRide(int rideId, int driverId);\\n  Future<Ride> completeRide(int rideId, int driverId);\\n  Future<Ride> cancelRide(int rideId);\\n}\",\"name\":\"RideRepository\"}",
+      "skill": "- Generate only the abstract repository interface defined in the sealed specification.\n- Preserve each method name, argument and return type exactly, including Future and nullability.\n- Do not add CRUD methods or rename any method.\n- Do not implement persistence or business logic.\n- Reuse the provided domain entities; never redefine them.\n- Do not add comments, markdown or unrelated classes.",
+      "dependencies": [
+        {
+          "id": "domain.Ride",
+          "interface": "class Ride {\n  final int? id;\n  final int passengerId;\n  final int? driverId;\n  final String status;\n  Ride({this.id, required this.passengerId, this.driverId, this.status = \"REQUESTED\"});\n}"
+        }
+      ]
+    },
+    {
+      "id": "infrastructure.HttpRideRepository",
+      "language": "dart",
+      "specification": "{\"depends_on\":[\"domain.Ride\",\"domain.RideRepository\"],\"description\":\"Remote HTTP implementation of RideRepository using dart:io. Use asynchronous HTTP operations with Future return values. Server URL must be configurable for Android physical devices. Never use localhost as the default remote server address. Encode and decode JSON matching the TaxiCat server contract. POST /rides with passengerId creates a ride. GET /rides/available lists requested rides. GET /rides/{id} retrieves a ride. POST /rides/{id}/accept with driverId accepts a ride. POST /rides/{id}/start with driverId starts a ride. POST /rides/{id}/complete with driverId completes a ride. POST /rides/{id}/cancel cancels a ride. Propagate HTTP errors to callers. Never open a SQLite database. Never implement server-side business transitions locally.\",\"entity\":\"Ride\",\"implements\":\"RideRepository\",\"name\":\"HttpRideRepository\",\"provider\":\"http\"}",
+      "skill": "- Implement exactly the persistence component specified in this contract.\n- Reuse domain entities and repository interfaces supplied as dependencies.\n- Do not declare duplicate domain entities or repository abstractions.\n- Do not invent delete or CRUD methods absent from the specified interface.\n- When an interface is supplied, implement its signatures exactly; otherwise do not fabricate one.\n- Use only the persistence provider specified in this contract.\n- Do not invent package APIs, classes or unavailable imports.\n- Output only Dart source code without markdown.\n\nSEALED HTTP CONSTRUCTION API:\n- Required public constructor: HttpRideRepository(String baseUrl)\n- The baseUrl is provided by the application bootstrap.\n- Use dart:io HttpClient for HTTP requests.\n- Use Future<T> for every repository operation.\n- Implement the supplied RideRepository interface exactly.\n- Use the baseUrl for every request.\n- Do not hardcode localhost or any server IP address.\n- Do not open SQLite or create a local database.\n- Convert JSON responses into Ride entities.\n- Propagate HTTP and connection errors to callers.\n",
+      "dependencies": [
+        {
+          "id": "domain.Ride",
+          "interface": "class Ride {\n  final int? id;\n  final int passengerId;\n  final int? driverId;\n  final String status;\n  Ride({this.id, required this.passengerId, this.driverId, this.status = \"REQUESTED\"});\n}"
+        },
+        {
+          "id": "domain.RideRepository",
+          "interface": "abstract class RideRepository {\n  Future<Ride> createRide(int passengerId);\n  Future<List<Ride>> getAvailableRides();\n  Future<Ride> getRide(int rideId);\n  Future<Ride> acceptRide(int rideId, int driverId);\n  Future<Ride> startRide(int rideId, int driverId);\n  Future<Ride> completeRide(int rideId, int driverId);\n  Future<Ride> cancelRide(int rideId);\n}"
+        }
+      ]
+    },
+    {
+      "id": "presentation.TaxiCatMobileView",
+      "language": "dart",
+      "specification": "{\"depends_on\":[\"application.RequestRide\",\"application.ListAvailableRides\",\"application.GetRideStatus\",\"application.AcceptRide\",\"application.StartRide\",\"application.CompleteRide\",\"application.CancelRide\"],\"description\":\"Single-root Flutter Android application with a dark navy and yellow TaxiCat visual identity.\\nShow the TaxiCat logo and two role choices: PASSENGER and DRIVER.\\nPASSENGER MODE: Use passenger ID 10 for demonstration. Display a prominent Request Ride button. After requesting, display ride ID and current status. Refresh ride status every two seconds while visible. Allow cancellation only for REQUESTED or ACCEPTED rides.\\nDRIVER MODE: Use driver ID 20 for demonstration. Show available REQUESTED rides from the backend. Refresh the list every two seconds while visible. Allow accepting an available ride. For the assigned ride show Start Ride when ACCEPTED and Complete Ride when IN_PROGRESS.\\nBoth modes must communicate with the same HTTP backend. Show connection errors clearly. Show loading indicators during operations. Never fabricate ride records or backend connectivity. Dispose polling timers when no longer needed. Keep the user interface responsive. Use one root screen with internal role selection.\\n\\nMAPBOX BACKGROUND:\\nUse mapbox_maps_flutter to render a real interactive MapWidget.\\nUse a Stack with the map as the bottom layer.\\nKeep passenger and driver controls visible above the map.\\nInitial camera: latitude 19.28, longitude -99.65, zoom 13.\\nDo not implement GPS tracking, routes or markers yet.\\nDo not initialize MapboxOptions in the screen.\\nThe deterministic CIDD bootstrap initializes Mapbox.\\nPreserve all HTTP use cases, polling and ride transitions.\\n\",\"image\":\"assets/images/taxicat_logo.png\",\"map\":{\"initial_camera\":{\"latitude\":19.28,\"longitude\":-99.65,\"zoom\":13},\"provider\":\"mapbox\",\"token_env\":\"MAPBOX_ACCESS_TOKEN\"},\"name\":\"TaxiCatMobileView\",\"title\":\"TaxiCat Mobile\",\"uses\":[\"RequestRide\",\"ListAvailableRides\",\"GetRideStatus\",\"AcceptRide\",\"StartRide\",\"CompleteRide\",\"CancelRide\"],\"widgets\":[\"RoleSelectionCard\",\"PassengerPanel\",\"DriverPanel\",\"RideStatusCard\",\"BackendConnectionIndicator\",\"TaxiCatMapBackground\"]}",
+      "skill": "- Implement a real Flutter Widget (StatelessWidget or StatefulWidget as appropriate).\n- Build the requested screen using Flutter widgets such as Scaffold.\n- Preserve the requested screen behaviors and widget hierarchy.\n- Render the screen title exactly as specified by the sealed contract.\n- Connect screen interactions to the provided use-case interfaces.\n- Preserve required public constructors and method signatures.\n- Generate ONLY the implementation owned by the requested presentation contract.\n- Dependency contracts are already implemented in separate Dart files.\n- Treat dependency declarations as READ-ONLY references, never as code to reproduce.\n- NEVER redefine, redeclare, implement or duplicate dependency classes, interfaces, entities or use cases.\n- NEVER generate abstract interfaces, stub classes, mocks or placeholder implementations for dependencies.\n- Reference dependency types directly by their exact names and signatures.\n- Do not invent missing dependencies, classes, constructors, methods or APIs.\n- Do not modify or extend the public contracts of dependencies.\n- The CIDD assembler resolves imports for internal contract dependencies.\n- All widgets listed in the screen specification belong to this contract unless explicitly declared as external dependencies.\n- Implement all owned widgets in the same Dart source file.\n- Additional private helper widgets are allowed when needed to implement the requested screen.\n- Do not reference widgets that are not implemented in this file or provided through declared dependencies.\n- Do not redefine widgets owned by other contracts.\n- Do not generate placeholder widgets.\n- Generate exactly the public screen class required by the contract.\n- Additional classes are permitted ONLY for widgets owned by the same presentation contract.\n- Do not declare any dependency type as a top-level class, abstract class, interface, enum or typedef.\n- Use dependency type names directly without declaring their definitions locally.\n- Keep all external dependency contracts outside the generated source file.\n- Do not invent application-specific import paths.\n- Use Flutter framework imports where necessary.\n- Output only valid Dart source code.\n- Do not output Markdown, explanations or code fences.\n- Do not reproduce dependency definitions from the prompt.\n- Do not include examples, test doubles or unrelated declarations.",
+      "dependencies": [
+        {
+          "id": "application.RequestRide",
+          "interface": "// CIDD SEALED PUBLIC API: RequestRide\n// Required public constructor: RequestRide(RideRepository repository)\nabstract interface class RequestRide {\n  Future<Ride> execute(int passengerId);\n}"
+        },
+        {
+          "id": "application.ListAvailableRides",
+          "interface": "// CIDD SEALED PUBLIC API: ListAvailableRides\n// Required public constructor: ListAvailableRides(RideRepository repository)\nabstract interface class ListAvailableRides {\n  Future<List<Ride>> execute();\n}"
+        },
+        {
+          "id": "application.GetRideStatus",
+          "interface": "// CIDD SEALED PUBLIC API: GetRideStatus\n// Required public constructor: GetRideStatus(RideRepository repository)\nabstract interface class GetRideStatus {\n  Future<Ride> execute(int rideId);\n}"
+        },
+        {
+          "id": "application.AcceptRide",
+          "interface": "// CIDD SEALED PUBLIC API: AcceptRide\n// Required public constructor: AcceptRide(RideRepository repository)\nabstract interface class AcceptRide {\n  Future<Ride> execute(int rideId, int driverId);\n}"
+        },
+        {
+          "id": "application.StartRide",
+          "interface": "// CIDD SEALED PUBLIC API: StartRide\n// Required public constructor: StartRide(RideRepository repository)\nabstract interface class StartRide {\n  Future<Ride> execute(int rideId, int driverId);\n}"
+        },
+        {
+          "id": "application.CompleteRide",
+          "interface": "// CIDD SEALED PUBLIC API: CompleteRide\n// Required public constructor: CompleteRide(RideRepository repository)\nabstract interface class CompleteRide {\n  Future<Ride> execute(int rideId, int driverId);\n}"
+        },
+        {
+          "id": "application.CancelRide",
+          "interface": "// CIDD SEALED PUBLIC API: CancelRide\n// Required public constructor: CancelRide(RideRepository repository)\nabstract interface class CancelRide {\n  Future<Ride> execute(int rideId);\n}"
+        },
+        {
+          "id": "domain.Ride",
+          "interface": "class Ride {\n  final int? id;\n  final int passengerId;\n  final int? driverId;\n  final String status;\n  Ride({this.id, required this.passengerId, this.driverId, this.status = \"REQUESTED\"});\n}"
+        }
+      ]
+    }
+  ],
+  "presentation": {
+    "entry_screen": "TaxiCatMobileView",
+    "assets": [
+      {
+        "path": "assets/images/taxicat_logo.png",
+        "type": "image"
+      }
+    ]
+  }
+}

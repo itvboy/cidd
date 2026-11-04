@@ -15,7 +15,7 @@ import shutil
 from cidd.engine.generation import GenerationError, load_verified_graph
 from cidd.engine.selective import verified_snapshot, signature, _source_path
 from cidd.engine.sanitizer import sanitize_dart
-
+from cidd.engine.integrations import allowed_external_imports
 
 def _load(path: Path) -> dict:
     return json.loads(path.read_text(encoding='utf-8'))
@@ -87,7 +87,12 @@ def recover(graph_path: Path, run_path: Path, project: Path, output_root: Path,
                 cleaned = sanitize_dart(raw, contract_id=cid,
                     dependencies=tuple(d.contract_id for d in contract.dependencies),
                     all_contract_ids=tuple(x.contract_id for x in contracts),
-                    package_name=package).source
+                    package_name=package,
+                    allowed_external=allowed_external_imports({
+                        "id": contract.contract_id,
+                        "specification": contract.specification,
+                    }),
+                ).source
                 if not cleaned.strip() or '```' in cleaned:
                     raise GenerationError(f'Invalid recovered source: {cid}')
                 data = cleaned.encode('utf-8')

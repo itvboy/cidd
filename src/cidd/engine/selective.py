@@ -22,6 +22,7 @@ from cidd.engine.generation import (
 )
 from cidd.workers.isolated import IsolatedWorker
 from cidd.providers.factory import create_provider
+from cidd.engine.integrations import allowed_external_imports
 
 EXT = {'dart': '.dart', 'go': '.go', 'python': '.py'}
 SAFE_ID = re.compile(r'^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$')
@@ -130,7 +131,12 @@ def selective_generate(graph_path: Path, previous_run: Path, output_root: Path, 
                     source = sanitize_dart(response.content, contract_id=cid,
                         dependencies=tuple(d.contract_id for d in contract.dependencies),
                         all_contract_ids=tuple(c.contract_id for c in contracts),
-                        package_name=match.group(1)).source.strip()
+                        package_name=match.group(1),
+                        allowed_external=allowed_external_imports({
+                            "id": contract.contract_id,
+                            "specification": contract.specification,
+                        }),
+                    ).source.strip()
                 else:
                     source = response.content.strip()
                 if not source or '```' in source:
@@ -189,9 +195,26 @@ def main():
     parser.add_argument('--graph',type=Path,default=Path('.cidd/contract-graph.json'))
     parser.add_argument('--reuse-run',type=Path,required=True)
     parser.add_argument('--output',type=Path,default=Path('.cidd/generated-runs'))
-    parser.add_argument('--model',default=None)
+
+    parser.add_argument(
+        '--provider',
+        choices=('ollama', 'meta'),
+        default='ollama',
+    )
+    parser.add_argument('--model', default=None)
+
     args = parser.parse_args()
-    report = selective_generate(args.graph,args.reuse_run,args.output,create_provider(model=args.model))
+
+    report = selective_generate(
+        args.graph,
+        args.reuse_run,
+        args.output,
+        create_provider(
+            provider=args.provider,
+            model=args.model,
+        ),
+    )
+
     for entry in report['results']:
         print(entry['status'],entry['id'],entry['decision'],entry.get('error',''))
     print('Run:',report['run_dir'],'tokens:',report['input_tokens']+report['output_tokens'])

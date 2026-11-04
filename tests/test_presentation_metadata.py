@@ -72,3 +72,40 @@ def test_unknown_navigation_target_is_rejected():
 
     with pytest.raises(GenomeError):
         build_graph(data)
+
+def test_navigation_routes_are_sealed():
+    data = genome()
+    data["presentation"]["screens"][1]["navigation"] = {
+        "actions": [
+            {
+                "name": "open_splash",
+                "label": "Splash",
+                "to": "SplashScreen",
+            }
+        ]
+    }
+
+    graph = build_graph(data).to_dict()
+    contracts = {c["id"]: c for c in graph["contracts"]}
+
+    import json
+
+    splash = json.loads(
+        contracts["presentation.SplashScreen"]["specification"]
+    )
+    todo = json.loads(
+        contracts["presentation.TodoView"]["specification"]
+    )
+
+    assert splash["navigation"]["on_start"]["route"] == "/todo"
+    assert todo["navigation"]["actions"][0]["route"] == "/splash"
+
+
+def test_navigation_route_collision_is_rejected():
+    data = genome()
+    data["presentation"]["screens"].append({
+        "name": "TodoScreen"
+    })
+
+    with pytest.raises(GenomeError):
+        build_graph(data)

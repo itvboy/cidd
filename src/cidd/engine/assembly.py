@@ -13,6 +13,8 @@ from pathlib import Path
 
 from cidd.engine.sanitizer import sanitize_dart, SanitizationError, _path
 from cidd.engine.bootstrap import bootstrap_flutter, BootstrapError
+from cidd.engine.integrations import required_packages
+from cidd.engine.integrations import allowed_external_imports
 
 _IDENT = re.compile(r'\b[A-Za-z_][A-Za-z_0-9]*\b')
 _IMPORT = re.compile(r"(?m)^\s*import\s+['\"]([^'\"]+)['\"]\s*;[^\n]*\n?")
@@ -42,61 +44,154 @@ def _read_graph(path: Path) -> dict:
     return data
 
 
-def _code_with_imports(source: str, *, current: str, graph: dict, package: str) -> tuple[str, list[str]]:
-    entries = {c['id']: c for c in graph['contracts']}
+
+def _code_with_imports(
+    source: str, *, current: str, graph: dict, package: str
+) -> tuple[str, list[str]]:
+    entries = {c["id"]: c for c in graph["contracts"]}
     entry = entries[current]
-    direct = {d['id'] for d in entry['dependencies']}
-    symbols = {cid.split('.', 1)[1]: cid for cid in entries}
+    direct = {d["id"] for d in entry["dependencies"]}
+    symbols = {cid.split(".", 1)[1]: cid for cid in entries}
+
     if len(symbols) != len(entries):
-        raise AssemblyError('Ambiguous class name across contracts')
-    # Normalize existing imports with the current sanitizer: never accept guessed paths.
-    normalized = sanitize_dart(source, contract_id=current,
-        dependencies=tuple(sorted(direct)), all_contract_ids=tuple(sorted(entries)),
-        package_name=package).source
-    existing = set(_IMPORT.findall(normalized))
-    body = _IMPORT.sub('', normalized)
-    # Public API transitive types may be imported when explicitly named by an authorized
-    # direct dependency's sealed interface (e.g. Todo in List<Todo>).
+        raise AssemblyError("Ambiguous class name across contracts")
+
+    normalized = sanitize_dart(
+        source,
+        contract_id=current,
+        dependencies=tuple(sorted(direct)),
+        all_contract_ids=tuple(sorted(entries)),
+        package_name=package,
+        allowed_external=allowed_external_imports(entry),
+    ).source
+
+    # Recognize both standard and aliased Dart imports.
+    import_pattern = re.compile(
+        r"""(?m)^[ \t]*import[ \t]+['"](?P<uri>[^'"]+)['"]"""
+        r"""(?P<alias>[ \t]+as[ \t]+[A-Za-z_]\w*)?"""
+        r"""[ \t]*;[^\r\n]*(?:\r?\n)?"""
+    )
+
+    existing = {
+        (m.group("uri"), (m.group("alias") or "").strip())
+        for m in import_pattern.finditer(normalized)
+    }
+
+    body = import_pattern.sub("", normalized)
+
     api_types = set()
-    for dep in entry['dependencies']:
-        api_types.update(_IDENT.findall(dep['interface']))
-    allowed = direct | {cid for symbol, cid in symbols.items()
-                        if symbol in api_types and cid != current}
-    # Keep symbol resolution conservative: ignore comments and string literals when
-    # deciding whether a class is referenced. Dart analyzer is authoritative later.
-    scan = re.sub(r'//[^\n]*|/\*[\s\S]*?\*/|\"(?:\\.|[^\"\\])*\"|\'(?:\\.|[^\'\\])*\'', ' ', body)
-    # Resolve *only* qualified references to graph-authorized symbols.
-    # The masking preserves offsets, so comments and strings are never modified.
-    masked = re.sub(r'//[^\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'',
-                    lambda m: ' ' * len(m.group()), body)
-    aliases = set(re.findall(r"(?m)^\s*import\s+['\"][^'\"]+['\"]\s+as\s+(\w+)\s*;", normalized))
+    for dep in entry["dependencies"]:
+        api_types.update(_IDENT.findall(dep["interface"]))
+
+    allowed = direct | {
+        cid
+        for symbol, cid in symbols.items()
+        if symbol in api_types and cid != current
+    }
+
+    def mask_literals(value: str) -> str:
+        return re.sub(
+            r"""//[^\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""",
+            lambda m: " " * len(m.group()),
+            value,
+        )
+
+    masked = mask_literals(body)
+
+    aliases = {
+        alias.removeprefix("as ").strip()
+        for _, alias in existing
+        if alias
+    }
+
     fixes = []
-    for match in re.finditer(r'\b(domain|application|infrastructure|presentation)\.([A-Za-z_]\w*)\b', masked):
+
+    for match in re.finditer(
+        r"\b(domain|application|infrastructure|presentation)\.([A-Za-z_]\w*)\b",
+        masked,
+    ):
         layer, symbol = match.groups()
-        target = f'{layer}.{symbol}'
+        target = f"{layer}.{symbol}"
+
         if layer in aliases:
             continue
+
         if target in entries and target != current:
             if target not in allowed:
-                raise AssemblyError(f'Undeclared qualified dependency: {target}')
+                raise AssemblyError(
+                    f"Undeclared qualified dependency: {target}"
+                )
             fixes.append((match.start(), match.end(), symbol))
+
     for start, end, symbol in reversed(fixes):
         body = body[:start] + symbol + body[end:]
-    scan = re.sub(r'//[^\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', ' ', body)
-    used = set(_IDENT.findall(scan))
-    required = {cid for name, cid in symbols.items() if name in used and cid != current}
+
+    scan = mask_literals(body)
+
+    # Qualified references such as app.RequestRide do not
+    # require an additional unaliased import.
+    used_unqualified = set(
+        re.findall(r"(?<![\w.])[A-Za-z_]\w*\b", scan)
+    )
+
+    required = {
+        cid
+        for name, cid in symbols.items()
+        if name in used_unqualified and cid != current
+    }
+
     forbidden = required - allowed
     if forbidden:
-        raise AssemblyError('Undeclared referenced contracts: ' + ', '.join(sorted(forbidden)))
+        raise AssemblyError(
+            "Undeclared referenced contracts: "
+            + ", ".join(sorted(forbidden))
+        )
+
     paths = {_path(cid, package) for cid in required}
-    for uri in existing:
-        if uri.startswith(f'package:{package}/') and uri not in paths:
-            # Existing internal imports must be backed by an authorized dependency.
-            raise AssemblyError(f'Unexpected internal import: {uri}')
-    imports = sorted(existing | paths)
-    # An import URI can exist without a known external package; dart analyze will catch it.
-    combined = ''.join(f"import '{u}';\n" for u in imports)
-    return (combined + '\n' if combined else '') + body.lstrip('\n'), sorted(paths - existing)
+    existing_uris = {uri for uri, _ in existing}
+
+    for uri in existing_uris:
+        if uri.startswith(f"package:{package}/"):
+            if uri not in {
+                _path(cid, package) for cid in allowed
+            }:
+                raise AssemblyError(
+                    f"Unexpected internal import: {uri}"
+                )
+
+    # Preserve aliased imports and external imports.
+    # Plain internal imports are retained only when an
+    # unqualified reference actually needs them.
+
+    declarations = {
+        (uri, alias)
+        for uri, alias in existing
+        if (
+            alias
+            or not uri.startswith(f"package:{package}/")
+            or uri in paths
+        )
+    }
+
+    for uri in paths:
+        declarations.add((uri, ""))
+    imports = [
+        f"import '{uri}'{' ' + alias if alias else ''};"
+        for uri, alias in sorted(declarations)
+    ]
+
+    combined = "\n".join(imports)
+
+    result = (
+        (combined + "\n\n" if combined else "")
+        + body.lstrip("\n")
+    )
+
+    added = sorted(
+        uri for uri in paths if (uri, "") not in existing
+    )
+
+    return result, added
 
 
 
@@ -104,6 +199,7 @@ def _prepare_dependencies(graph: dict, output: Path) -> list[str]:
     """Pin supported infrastructure packages in the assembled copy only."""
 
     required = {}
+    required.update(required_packages(graph))
 
     for contract in graph['contracts']:
         if not contract['id'].startswith('infrastructure.'):
@@ -132,10 +228,12 @@ def _prepare_dependencies(graph: dict, output: Path) -> list[str]:
         content
     )
 
-    if required and not section:
-        raise AssemblyError(
-            'Missing dependencies section in pubspec.yaml'
-        )
+    if section is None:
+        if required:
+            raise AssemblyError(
+                'Missing dependencies section in pubspec.yaml'
+            )
+        return []
 
     for package, version in required.items():
         if re.search(
@@ -177,6 +275,21 @@ def assemble(graph_path: Path, run_dir: Path, project: Path, output: Path, *, an
         raise AssemblyError(f'Output already exists: {output}')
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(project, output, ignore=shutil.ignore_patterns('.cidd', '.dart_tool', 'build', '.git', '.idea'))
+
+    # CIDD owns these generated implementation directories.
+    # Remove stale Dart sources only from the assembly output.
+    # The original Flutter project is never modified.
+    for layer in (
+        "domain",
+        "application",
+        "infrastructure",
+        "presentation",
+    ):
+        generated_layer_dir = output / "lib" / layer
+
+        if generated_layer_dir.is_dir():
+            shutil.rmtree(generated_layer_dir)
+
     items = []
     for contract in graph['contracts']:
         cid = contract['id']

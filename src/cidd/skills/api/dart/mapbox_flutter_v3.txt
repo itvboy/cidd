@@ -1,0 +1,97 @@
+
+MAPBOX FLUTTER 3.x — VERIFIED API REFERENCE
+
+PURPOSE:
+Generate one Flutter presentation contract using the Mapbox Maps
+SDK, respecting CIDD contract isolation and the APIs verified
+against the target Flutter project.
+
+CONTRACT ISOLATION:
+- Generate only the requested presentation contract.
+- Never reproduce Domain entities, use cases, repositories, or other screens.
+- Preserve the exact public widget class name and constructor.
+- Reference only declared application dependencies.
+- Internal contract imports are handled by the CIDD assembler.
+- Do not invent relative imports such as ../domain/ride.dart.
+- Do not invent package names or internal import paths.
+- Import the official Mapbox SDK using:
+  import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+
+ACCESS TOKEN:
+- The application bootstrap initializes the Mapbox SDK before runApp.
+- Do not call MapboxOptions.setAccessToken inside a screen.
+- Do not call MapboxOptions.getAccessToken inside a screen.
+- When an explicit token is needed for an HTTP Directions API request,
+  read it using:
+  const token = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
+- Check for an empty token before making an HTTP request.
+- Never hardcode tokens, API keys, or credentials.
+
+GEOGRAPHIC COORDINATES:
+- GeoJSON and Mapbox Position use LONGITUDE first, LATITUDE second.
+- Always construct Position(longitude, latitude).
+- Never reverse the coordinate order.
+- Never use Point.toJson() when an SDK API requires a Point.
+
+MAP INITIALIZATION:
+- Use the MapWidget widget from mapbox_maps_flutter.
+- Use CameraViewportState for the initial viewport.
+- CameraViewportState.center requires Point?, not Map<String, dynamic>.
+- Correct example:
+
+  MapWidget(
+    viewport: CameraViewportState(
+      center: Point(
+        coordinates: Position(-99.1412, 19.4352),
+      ),
+      zoom: 14.0,
+      bearing: 0.0,
+      pitch: 0.0,
+    ),
+  )
+
+- Never pass Point(...).toJson() as CameraViewportState.center.
+- Never create a replacement or mock MapWidget.
+
+MAP ANNOTATIONS:
+- Use the Mapbox SDK annotation managers.
+- CircleAnnotationOptions.geometry requires a Point.
+- Use Point(coordinates: Position(longitude, latitude)).
+- Use only the role-specific marker required by the screen.
+- Do not invent GPS movement or live device locations.
+- Keep annotation and map creation asynchronous when required.
+- Do not silently create fake markers when SDK operations fail.
+
+DIRECTIONS API:
+- For a requested road route, obtain the actual route geometry
+  from the Mapbox Directions API.
+- Read the API token using String.fromEnvironment.
+- The driving endpoint uses longitude,latitude coordinate pairs.
+- Request geometries=geojson and overview=full when GeoJSON
+  coordinates are needed.
+- Validate HTTP status and decoded response structure.
+- Check that routes is a nonempty list.
+- Check that geometry contains a valid coordinates list.
+- GeoJSON route coordinates use [longitude, latitude].
+- Convert coordinates into the SDK's required geometry types.
+- Do not invent or hand-draw a route when the request fails.
+- Preserve the map and display a useful error if loading fails.
+- Dispose HTTP clients and map-related resources appropriately.
+
+FLUTTER LIFECYCLE:
+- Use mounted checks before setState after awaited operations.
+- Dispose timers, controllers, and other owned resources.
+- Do not continuously recreate annotation managers on rebuild.
+- Keep map gestures available outside UI overlays.
+
+API COMPATIBILITY:
+- Do not invent SDK constructors, methods, getters, or parameters.
+- Use the public API of the installed mapbox_maps_flutter 3.x SDK.
+- Do not assume an API from a different SDK major version exists.
+- Prefer typed SDK objects over arbitrary JSON maps.
+- Avoid deprecated SDK APIs when supported alternatives are known.
+
+OUTPUT:
+- Output valid Dart source only.
+- No Markdown fences, explanations, mocks, or placeholder classes.
+- Implement only the requested screen and its owned helper widgets.

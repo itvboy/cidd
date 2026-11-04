@@ -1,0 +1,159 @@
+
+SQLITE3 NATIVE API REFERENCE — Dart sqlite3 3.x
+
+PURPOSE:
+Provide verified sqlite3 API usage for a single persistence contract.
+This document is an API reference, NOT source code to copy verbatim.
+
+REQUIRED IMPORT:
+import 'package:sqlite3/sqlite3.dart';
+
+GENERAL RULES:
+- Generate exactly ONE concrete implementation class named by the contract.
+- Never reproduce examples as additional classes or declarations.
+- Implement only the supplied persistence contract.
+- Preserve all required public names, constructors and method signatures.
+- Implement the supplied repository interface exactly.
+- Explicitly declare the repository interface using implements.
+- Add @override to every implemented repository interface method.
+- All database operations are synchronous.
+- Do not introduce Future, FutureOr, Stream or async into synchronous repository methods.
+- The Database instance is supplied by the bootstrap.
+- Do not open a second database connection inside the adapter.
+- Do not close the bootstrap-owned Database connection.
+- Initialize required tables before the constructor returns.
+- Use CREATE TABLE IF NOT EXISTS to preserve existing database records.
+- Derive table names, columns and types from the contract and entity definitions.
+- Use parameterized SQL for values.
+- Never invent sqlite3 APIs, classes, methods or imports.
+- Generate only the requested Dart source code.
+
+REPOSITORY ADAPTER STRUCTURE:
+
+The generated persistence adapter MUST explicitly implement
+the repository interface specified by the sealed contract.
+
+Required class declaration pattern:
+
+class AdapterName implements RepositoryInterface {
+  final Database _db;
+
+  AdapterName(this._db) {
+    _initializeDatabase();
+  }
+
+  void _initializeDatabase() {
+    // Initialize required tables.
+  }
+
+  // Implement the repository methods here.
+}
+
+STRUCTURAL RULES:
+- AdapterName and RepositoryInterface are placeholders, not literal class names.
+- Replace both with the exact names supplied by the contract.
+- Import the repository interface from the path explicitly supplied by the generation context.
+- Never invent a repository import path.
+- Always include the implements RepositoryInterface clause.
+- Use the exact constructor name and signature required by the contract.
+- Receive the bootstrap-owned Database instance through the constructor.
+- Assign the supplied Database instance to a private field.
+- Initialize required tables before the constructor returns.
+- Use @override on every method implementing the repository interface.
+- Preserve the exact repository method names, parameters and return types.
+- Do not reproduce this example as an additional class.
+- Do not generate placeholder names in the final implementation.
+- Do not introduce additional public interfaces or classes.
+
+METHOD IMPLEMENTATION PATTERN:
+
+Each method required by the repository interface MUST be
+implemented in the concrete adapter.
+
+Example structure:
+
+@override
+ReturnType methodName(ParameterType parameter) {
+  // Implement the exact contract behavior.
+}
+
+RULES:
+- ReturnType, methodName, ParameterType and parameter are placeholders.
+- Replace them with the exact sealed interface signature.
+- Never generate placeholder types or methods.
+- Do not omit @override.
+- Do not change synchronous methods into asynchronous methods.
+- Do not invent additional methods to satisfy unspecified behavior.
+
+DATABASE API REFERENCE:
+
+1. Execute SQL:
+   database.execute(sql, parameters);
+
+2. Query rows:
+   final rows = database.select(sql, parameters);
+   - Returns a ResultSet.
+   - Use rows.isEmpty, rows.first or iterate over rows.
+   - Access row values by column name.
+
+3. Prepared statements:
+   final statement = database.prepare(sql);
+   try {
+     statement.execute(parameters);
+   } finally {
+     statement.close();
+   }
+
+4. Retrieve the last inserted row ID:
+   final id = database.lastInsertRowId;
+   - Read immediately after a successful INSERT on the same Database.
+
+5. Retrieve the number of affected rows:
+   final count = database.updatedRows;
+   - Read immediately after the corresponding UPDATE or DELETE.
+   - Use count > 0 when the contract requires a boolean success result.
+
+6. Schema initialization:
+   database.execute(createTableSql);
+   - createTableSql must use CREATE TABLE IF NOT EXISTS.
+   - Use SQLite-compatible column types.
+   - Do not drop or recreate existing tables.
+
+7. Boolean persistence:
+   - Persist boolean values as integers 0 or 1.
+   - Convert stored integers back to Dart bool when reading.
+
+ALLOWED DATABASE MEMBERS:
+- Database.execute(...)
+- Database.select(...)
+- Database.prepare(...)
+- Database.lastInsertRowId
+- Database.updatedRows
+
+ALLOWED PREPARED STATEMENT MEMBERS:
+- PreparedStatement.execute(...)
+- PreparedStatement.close()
+
+FORBIDDEN:
+- database.getUpdatedRowId()
+- database.getLastInsertId()
+- database.getLastInsertRowId()
+- statement.dispose()
+- Invented package paths or application imports.
+- Duplicate implementation classes.
+- Example classes copied into generated source.
+- Placeholder names copied into generated source.
+- Unconditional true for DELETE when deletion status must reflect affected rows.
+
+OUTPUT REQUIREMENTS:
+- Exactly one concrete implementation class.
+- Explicitly implement the sealed repository interface.
+- Import the repository interface using its supplied path.
+- Include @override on all repository interface methods.
+- Preserve the required constructor signature.
+- Initialize tables using the supplied Database instance.
+- No additional top-level example classes.
+- No duplicated class declarations.
+- No Markdown, explanations or code fences.
+- Use only import paths explicitly supplied by the generation context.
+- Ensure all methods conform to their sealed public interfaces.

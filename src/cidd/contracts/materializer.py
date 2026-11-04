@@ -11,6 +11,8 @@ from cidd.contracts.sealed import ContractDependency, SealedContract
 from cidd.skills.registry import resolve_skill
 from cidd.genome.parser import GenomeError
 from cidd.genome.validator import validate_genome
+from copy import deepcopy
+from cidd.contracts.navigation import screen_route
 
 SECTIONS = (("domain", "entities"), ("application", "use_cases"),
             ("infrastructure", "persistence"), ("presentation", "screens"))
@@ -135,14 +137,19 @@ def _dart_value_type(raw: str, known_entities: set[str], location: str) -> str:
         return _DART_TYPES[value.lower()]
     if value in known_entities:
         return value
-    if value.startswith("list<") and value.endswith(">"):
+    if value.lower().startswith("list<") and value.endswith(">"):
         inner = _dart_value_type(value[5:-1].strip(), known_entities, location)
         return f"List<{inner}>"
     raise GenomeError(f"{location}: unsupported Dart type {raw!r}")
 
 
-def derive_use_case_interface(entry: dict, language: str, known_entities: set[str],
-                              repository_names: set[str]) -> str:
+def derive_use_case_interface(
+    entry: dict,
+    language: str,
+    known_entities: set[str],
+    repository_names: set[str],
+    asynchronous: bool = False,
+) -> str:
     """Produce the minimal, stable public API for a Dart use case.
 
     The method is synchronous in this MVP, matching the currently sealed
@@ -174,6 +181,9 @@ def derive_use_case_interface(entry: dict, language: str, known_entities: set[st
         f"application.{name}.output",
     )
 
+    if asynchronous:
+        result_type = f"Future<{result_type}>"
+
     repository_deps = [x for x in entry.get("depends_on", []) if x in repository_names]
     if len(repository_deps) > 1:
         raise GenomeError(f"application.{name}: ambiguous repository constructor dependencies")
@@ -189,7 +199,8 @@ def derive_use_case_interface(entry: dict, language: str, known_entities: set[st
 
 def _derived_interface(identifier: str, entry: dict, layer: str,
                        language: str, known_entities: set[str],
-                       repository_names: set[str]) -> str | None:
+                       repository_names: set[str],
+                       asynchronous: bool = False) -> str | None:
     if layer == "domain" and isinstance(entry.get("fields"), list):
         return derive_entity_interface(entry, language)
     if layer == "application":
@@ -199,16 +210,17 @@ def _derived_interface(identifier: str, entry: dict, layer: str,
         # nonempty interface and will fail with the existing actionable error.
         if "output" not in entry:
             return None
-        return derive_use_case_interface(entry, language, known_entities, repository_names)
+        return derive_use_case_interface(entry, language, known_entities, repository_names, asynchronous)
     return None
 
 
 def _resolve_public_interface(identifier: str, entry: dict, layer: str,
                               language: str, known_entities: set[str],
-                              repository_names: set[str]) -> str | None:
+                              repository_names: set[str],
+                              asynchronous: bool = False) -> str | None:
     explicit = entry.get("interface")
     derived = _derived_interface(identifier, entry, layer, language,
-                                 known_entities, repository_names)
+                                 known_entities, repository_names, asynchronous)
     if derived is not None:
         if explicit is not None and (not isinstance(explicit, str) or
                                      explicit.strip() != derived.strip()):
@@ -277,6 +289,16 @@ def _presentation_metadata(genome: dict) -> dict | None:
         raise GenomeError("Duplicate presentation screen")
 
     known = set(names)
+
+    from cidd.contracts.navigation import screen_route
+
+    routes = [screen_route(name) for name in names]
+
+    if len(routes) != len(set(routes)):
+        raise GenomeError(
+            "Multiple presentation screens resolve to the same route"
+        )
+
     entry = presentation.get("entry_screen")
 
     if entry is None:
@@ -284,7 +306,7 @@ def _presentation_metadata(genome: dict) -> dict | None:
             raise GenomeError(
                 "Multiple screens require presentation.entry_screen"
             )
-        
+
     elif entry not in known:
         raise GenomeError(f"Unknown entry screen: {entry}")
 
@@ -383,6 +405,18 @@ def build_graph(genome: dict) -> ContractGraph:
             indexed[identifier] = (entry, layer)
 
     language = genome["project"]["language"]
+
+    adapters = genome.get("infrastructure", {}).get("persistence", [])
+    providers = {adapter.get("provider", "sqlite3") for adapter in adapters}
+
+    if not providers:
+        providers = {"sqlite3"}
+
+    if len(providers) != 1 or not providers.issubset({"sqlite3", "http"}):
+        raise GenomeError("Unsupported or ambiguous infrastructure provider")
+
+    asynchronous = providers == {"http"}
+
     known_entities = {identifier.split(".", 1)[1] for identifier, (_, layer) in indexed.items()
                       if layer == "domain" and isinstance(indexed[identifier][0].get("fields"), list)}
     repository_names = {identifier for identifier, (_, layer) in indexed.items()
@@ -419,7 +453,7 @@ def build_graph(genome: dict) -> ContractGraph:
                     f"{identifier}: uses must match application dependencies. "
                     f"Expected {sorted(expected)}, got {sorted(actual)}"
                 )
-        
+
         dependencies = []
         for dep in deps:
             if dep == identifier:
@@ -428,7 +462,7 @@ def build_graph(genome: dict) -> ContractGraph:
                 raise GenomeError(f"{identifier}: unknown dependency {dep!r}")
             dep_entry, dep_layer = indexed[dep]
             interface = _resolve_public_interface(dep, dep_entry, dep_layer, language,
-                                                  known_entities, repository_names)
+                                                  known_entities, repository_names, asynchronous=asynchronous)
             if not isinstance(interface, str) or not interface.strip():
                 raise GenomeError(f"{identifier}: dependency {dep} requires a nonempty interface")
             dependencies.append(ContractDependency(dep, interface))
@@ -474,6 +508,28 @@ def build_graph(genome: dict) -> ContractGraph:
             raise GenomeError(f"{identifier}: language must be nonempty")
         skill = entry.get("skill", "")
         skill = resolve_skill(language, identifier, entry)
+
+        if (
+            layer == "presentation"
+            and language.lower() == "dart"
+            and isinstance(entry.get("map"), dict)
+            and entry["map"].get("provider") == "mapbox"
+        ):
+            mapbox_skill_path = (
+                Path(__file__).resolve().parents[1]
+                / "skills"
+                / "api"
+                / "dart"
+                / "mapbox_flutter_v3.txt"
+            )
+
+            mapbox_skill = mapbox_skill_path.read_text(
+                encoding="utf-8"
+            )
+
+            skill += "\n\n" + mapbox_skill
+
+
         if (
             layer == "infrastructure"
             and language.lower() == "dart"
@@ -508,6 +564,41 @@ def build_graph(genome: dict) -> ContractGraph:
 
             skill += "\n\n" + api_skill
 
+        if (
+            layer == "infrastructure"
+            and language.lower() == "dart"
+            and entry.get("provider") == "http"
+        ):
+            class_name = identifier.split(".", 1)[1]
+
+            skill += (
+                "\n\nSEALED HTTP CONSTRUCTION API:\n"
+                f"- Required public constructor: {class_name}(String baseUrl)\n"
+                "- The baseUrl is provided by the application bootstrap.\n"
+                "- Use dart:io HttpClient for HTTP requests.\n"
+                "- Use Future<T> for every repository operation.\n"
+                "- Implement the supplied RideRepository interface exactly.\n"
+                "- Use the baseUrl for every request.\n"
+                "- Do not hardcode localhost or any server IP address.\n"
+                "- Do not open SQLite or create a local database.\n"
+                "- Convert JSON responses into Ride entities.\n"
+                "- Propagate HTTP and connection errors to callers.\n"
+            )
+
+            api_skill_path = (
+                Path(__file__).resolve().parents[1]
+                / "skills"
+                / "api"
+                / "dart"
+                / "http_json_v1.txt"
+            )
+
+            api_skill = api_skill_path.read_text(encoding="utf-8")
+
+            skill += "\n\n" + api_skill
+
+
+
         if not isinstance(skill, str):
             raise GenomeError(f"{identifier}: skill must be a string")
 
@@ -523,11 +614,23 @@ def build_graph(genome: dict) -> ContractGraph:
                 if skill
                 else type_context
             )
-        
+
         # Seal the same public API in the owner and every dependent's context.
         effective_entry = dict(entry)
+
+        if layer == "presentation":
+            effective_entry = deepcopy(entry)
+            navigation = effective_entry.get("navigation", {})
+
+            if "on_start" in navigation:
+                target = navigation["on_start"]["to"]
+                navigation["on_start"]["route"] = screen_route(target)
+
+            for action in navigation.get("actions", []):
+                action["route"] = screen_route(action["to"])
+
         public_interface = _resolve_public_interface(identifier, entry, layer, language,
-                                                     known_entities, repository_names)
+                                                     known_entities, repository_names, asynchronous=asynchronous)
         if public_interface is not None:
             effective_entry["interface"] = public_interface
         if layer == "application":

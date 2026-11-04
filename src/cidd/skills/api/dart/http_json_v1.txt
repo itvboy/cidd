@@ -1,0 +1,57 @@
+
+HTTP JSON WIRE FORMAT — DART
+
+PURPOSE:
+Implement HTTP JSON adapters while preserving
+the public Domain entity and Repository contracts.
+
+GENERAL RULES:
+- HTTP JSON serialization belongs exclusively to Infrastructure.
+- Never modify Domain entities to match external JSON naming.
+- Preserve all sealed repository method signatures.
+- Treat request bodies and response bodies independently.
+- Use explicit wire-format names when provided by the API.
+- Do not assume request and response field names are identical.
+
+JSON FIELD MAPPING:
+- Dart entity fields may use camelCase.
+- External JSON fields may use camelCase or snake_case.
+- Convert external field names to the corresponding Dart
+  entity fields at the Infrastructure boundary.
+- When a response contains an exact camelCase key,
+  use that key.
+- When an equivalent snake_case key is present instead,
+  use that key.
+- Do not prefer a missing camelCase key over an existing
+  snake_case key.
+- Never fabricate missing required entity fields.
+
+DECODING:
+- Validate the received JSON structure before conversion.
+- Accept nullable values only for nullable entity fields.
+- Preserve the exact types declared by the Domain contract.
+- Preserve server-provided status values.
+- Surface malformed responses as descriptive exceptions.
+- Never suppress errors or fabricate successful responses.
+
+ENCODING:
+- Match request body field names to the documented HTTP API.
+- Never transform request keys merely because response keys
+  use a different naming convention.
+- Never invent HTTP methods, paths or request parameters.
+
+ARCHITECTURE:
+- Keep all JSON conversion helpers private to the adapter.
+- Do not add serialization methods to Domain entities.
+- Do not modify the application use cases.
+- Do not introduce new repository methods.
+- Do not implement business state transitions locally.
+
+DART TYPE PROMOTION AND JSON DECODING:
+- After `if (decoded is! Map) { throw FormatException(...); }`,
+  Dart promotes `decoded` to Map on the succeeding code path.
+- Convert with `Map<String, dynamic>.from(decoded)`.
+- Do NOT write `Map<String, dynamic>.from(decoded as Map)`.
+- Do not add redundant casts when Dart flow analysis has already
+  established the required type.
+- Preserve runtime type checks and meaningful FormatException errors.

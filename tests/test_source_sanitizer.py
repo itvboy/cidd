@@ -29,3 +29,40 @@ def test_reject_mixed_markdown():
 def test_deduplicates_imports():
     src = "import 'domain.Todo.dart';\nimport 'package:domain/Todo.dart';\nclass CreateTodo {}"
     assert sanitize_dart(src, **KW).source.count("import 'package:todo/domain/todo.dart';") == 1
+
+
+import pytest
+
+from cidd.engine.sanitizer import (
+    sanitize_dart,
+    SanitizationError,
+)
+
+MAPBOX_SOURCE = """
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+
+class TaxiCatMobileView {}
+"""
+
+
+def test_mapbox_import_requires_explicit_authorization():
+    args = dict(
+        raw=MAPBOX_SOURCE,
+        contract_id="presentation.TaxiCatMobileView",
+        dependencies=(),
+        all_contract_ids=("presentation.TaxiCatMobileView",),
+        package_name="taxicat_mobile",
+    )
+
+    with pytest.raises(SanitizationError):
+        sanitize_dart(**args)
+
+    result = sanitize_dart(
+        **args,
+        allowed_external=("package:mapbox_maps_flutter/",),
+    )
+
+    assert (
+        "package:mapbox_maps_flutter/mapbox_maps_flutter.dart"
+        in result.source
+    )

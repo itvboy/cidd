@@ -51,12 +51,29 @@ def main() -> None:
     )
     graph_command.add_argument("--genome", type=Path, default=Path("genome/genome.yaml"))
     graph_command.add_argument("--output", type=Path, default=Path(".cidd/contract-graph.json"))
-    graph_command.add_argument("--model", default="muse-glimmer")
+
+
+    graph_command.add_argument(
+        "--provider",
+        choices=["ollama", "meta"],
+        default="ollama",
+    )
+    graph_command.add_argument("--model", default=None)
+
 
     generate_command = commands.add_parser("generate", help="Generate staged sources from a sealed graph")
     generate_command.add_argument("--graph", type=Path, default=Path(".cidd/contract-graph.json"))
     generate_command.add_argument("--output", type=Path, default=Path(".cidd/generated-runs"))
-    generate_command.add_argument("--model", default="muse-glimmer")
+
+
+    generate_command.add_argument(
+        "--provider",
+        choices=["ollama", "meta"],
+        default="ollama",
+    )
+    generate_command.add_argument("--model", default=None)
+
+
     generate_command.add_argument(
         "--force",
         action="store_true",
@@ -107,7 +124,18 @@ def main() -> None:
         try:
             genome = load_genome(args.genome)
             validate_genome(genome)
-            expanded, usage = expand_repository_contracts(genome, create_provider(model=args.model))
+
+
+            provider = create_provider(
+                provider=args.provider,
+                model=args.model,
+            )
+
+            expanded, usage = expand_repository_contracts(
+                genome,
+                provider,
+            )
+
             graph = build_graph(expanded)
             write_graph(graph, args.output)
             for result in usage:
@@ -132,7 +160,10 @@ def main() -> None:
             if not args.force:
                 snapshot = args.snapshot or select_active_snapshot(project_root)
 
-            provider = create_provider(model=args.model)
+            provider = create_provider(
+                provider=args.provider,
+                model=args.model,
+            )
 
             if snapshot is None:
                 report = generate_graph(
