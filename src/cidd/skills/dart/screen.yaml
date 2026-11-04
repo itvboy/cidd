@@ -39,6 +39,16 @@ rules:
   - Do not invent application-specific import paths.
   - Use Flutter framework imports where necessary.
 
+  # STATIC ANALYSIS HYGIENE
+  - Do not declare private fields unless they are actually read.
+  - Do not assign values to private fields that are never used.
+  - Prefer local variables for values needed only inside one method.
+  - Store MapboxMap references only when later operations require them.
+  - Preserve all required map behaviors and asynchronous callbacks.
+  - Do not remove required state merely to silence a warning.
+  - Use a single underscore for unused callback parameters when valid.
+  - Avoid Dart analyzer warnings such as unused_field and unnecessary_underscores.
+
   # OUTPUT
   - Output only valid Dart source code.
   - Do not output Markdown, explanations or code fences.

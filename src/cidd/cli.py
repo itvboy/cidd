@@ -12,6 +12,7 @@ from cidd.providers.base import LLMProviderError
 from cidd.engine.generation import generate_graph, GenerationError
 from cidd.genome.parser import GenomeError, load_genome
 from cidd.genome.validator import validate_genome
+from cidd.engine.assembly import assemble, AssemblyError
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -87,16 +88,62 @@ def main() -> None:
         help="Use a previously validated snapshot as the generation baseline",
     )    
 
+
+    assemble_command = commands.add_parser(
+        "assemble",
+        help="Assemble generated contracts into a Flutter project",
+    )
+
+    assemble_command.add_argument(
+        "--graph",
+        type=Path,
+        default=Path(".cidd/contract-graph.json"),
+    )
+
+    assemble_command.add_argument(
+        "--run",
+        type=Path,
+        required=True,
+        help="Generation run directory",
+    )
+
+    assemble_command.add_argument(
+        "--project",
+        type=Path,
+        default=Path("."),
+    )
+
+    assemble_command.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+    )
+
+    assemble_command.add_argument(
+        "--no-analyze",
+        action="store_true",
+        help="Skip Flutter dependency preparation and static analysis",
+    )
+
+
     args = parser.parse_args()
 
     if args.command == "new-project":
-        repository_root = Path(__file__).resolve().parents[2]
+        package_root = Path(__file__).resolve().parent
+        packaged_templates = package_root / "templates"
+        repository_templates = package_root.parents[1] / "templates"
+
+        templates_dir = (
+            packaged_templates
+            if (packaged_templates / args.template).is_dir()
+            else repository_templates
+        )
 
         try:
             project = create_project(
                 name=args.name,
                 template=args.template,
-                templates_dir=repository_root / "templates",
+                templates_dir=templates_dir,
                 destination_dir=Path.cwd(),
             )
         except (ValueError, FileNotFoundError, FileExistsError) as error:
@@ -222,6 +269,58 @@ def main() -> None:
             item["status"] not in ("GENERATED", "REUSED")
             for item in report["results"]
         ):
+            raise SystemExit(1)
+
+    elif args.command == "assemble":
+        output = args.output or (
+            args.project / ".cidd" / "assembled" / args.run.name
+        )
+
+        try:
+            report = assemble(
+                graph_path=args.graph,
+                run_dir=args.run,
+                project=args.project,
+                output=output,
+                analyze=not args.no_analyze,
+            )
+        except (AssemblyError, OSError, ValueError) as error:
+            print(f"[FAIL] Assembly: {error}")
+            raise SystemExit(1) from error
+
+        print(f"Assembly: {output}")
+
+        for item in report["contracts"]:
+            print(
+                f"[{item['status']}] {item['id']}"
+                + (
+                    f" - {item['diagnostic']}"
+                    if item.get("diagnostic")
+                    else ""
+                )
+            )
+
+        print(f"Bootstrap: {report['bootstrap']['status']}")
+        print(f"Pub get: {report['pub_get']['status']}")
+        print(f"Analyzer: {report['analyzer']['status']}")
+        print(f"Report: {output / 'cidd-assembly-report.json'}")
+
+        contracts_ok = all(
+            item["status"] == "ASSEMBLED"
+            for item in report["contracts"]
+        )
+
+        bootstrap_ok = report["bootstrap"]["status"] == "PASS"
+
+        if args.no_analyze:
+            validation_ok = True
+        else:
+            validation_ok = (
+                report["pub_get"]["status"] == "PASS"
+                and report["analyzer"]["status"] == "PASS"
+            )
+
+        if not (contracts_ok and bootstrap_ok and validation_ok):
             raise SystemExit(1)
     else:
         parser.print_help()

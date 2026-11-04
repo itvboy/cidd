@@ -1,0 +1,275 @@
+genome: '0.1'
+project:
+  name: taxicat_mobile_mapbox
+  template: flutter
+  language: dart
+  description: TaxiCat Android application with separate passenger and driver flows. Communicates with
+    the existing TaxiCat backend through HTTP. All business state transitions and persistence are owned
+    by the remote server. No local SQLite database in the mobile app.
+domain:
+  entities:
+  - name: Ride
+    description: Remote taxi ride representation. Status is REQUESTED, ACCEPTED, IN_PROGRESS, COMPLETED,
+      or CANCELLED. Identifiers and status values are supplied by the server.
+    fields:
+    - name: id
+      type: int
+      nullable: true
+    - name: passengerId
+      type: int
+      required: true
+    - name: driverId
+      type: int
+      nullable: true
+    - name: status
+      type: string
+      default: REQUESTED
+application:
+  use_cases:
+  - name: RequestRide
+    description: Request a ride through the remote repository
+    input:
+      passengerId: int
+    output: Ride
+    rules:
+    - Reject nonpositive passenger IDs.
+    - Delegate ride creation to RideRepository.
+    - Return the Ride received from the server.
+    - Do not create or persist local rides.
+  - name: ListAvailableRides
+    description: Retrieve available rides from the remote server
+    input: {}
+    output: List<Ride>
+    rules:
+    - Delegate the query to RideRepository.
+    - Return server-provided REQUESTED rides.
+    - Preserve ascending ID order.
+  - name: GetRideStatus
+    description: Retrieve current remote ride status
+    input:
+      rideId: int
+    output: Ride
+    rules:
+    - Delegate lookup to RideRepository.
+    - Return the current server-provided ride.
+    - Do not cache the authoritative ride state.
+  - name: AcceptRide
+    description: Accept a ride through the backend
+    input:
+      rideId: int
+      driverId: int
+    output: Ride
+    rules:
+    - Delegate acceptance to RideRepository.
+    - Return the server-provided Ride.
+    - The server owns transition validation and concurrency.
+  - name: StartRide
+    description: Start an accepted ride through the backend
+    input:
+      rideId: int
+      driverId: int
+    output: Ride
+    rules:
+    - Delegate start to RideRepository.
+    - Return the server-provided Ride.
+    - The server verifies the assigned driver.
+  - name: CompleteRide
+    description: Complete a ride through the backend
+    input:
+      rideId: int
+      driverId: int
+    output: Ride
+    rules:
+    - Delegate completion to RideRepository.
+    - Return the server-provided Ride.
+    - The server owns status transition validation.
+  - name: CancelRide
+    description: Cancel an eligible ride through the backend
+    input:
+      rideId: int
+    output: Ride
+    rules:
+    - Delegate cancellation to RideRepository.
+    - Return the server-provided Ride.
+    - The server decides whether cancellation is allowed.
+infrastructure:
+  persistence:
+  - name: HttpRideRepository
+    provider: http
+    entity: Ride
+    implements: RideRepository
+    description: 'Remote HTTP implementation of RideRepository using dart:io. Use asynchronous HTTP operations
+      with Future return values. Server URL must be configurable for Android physical devices. Never use
+      localhost or any server IP address as a hardcoded default. Encode request JSON using camelCase keys
+      required by the client contract. Decode response JSON matching the TaxiCat server contract.
+
+      POST /rides with passengerId creates a ride. GET /rides/available lists requested rides. GET /rides/{id}
+      retrieves a ride. POST /rides/{id}/accept with driverId accepts a ride. POST /rides/{id}/start with
+      driverId starts a ride. POST /rides/{id}/complete with driverId completes a ride. POST /rides/{id}/cancel
+      cancels a ride.
+
+      The backend may return Ride JSON fields in snake_case, including passenger_id and driver_id. The
+      adapter must successfully decode both snake_case and camelCase field names for Ride entities. Propagate
+      HTTP errors to callers. Never open a SQLite database. Never implement server-side business transitions
+      locally.'
+    depends_on:
+    - domain.Ride
+    - domain.RideRepository
+presentation:
+  framework: flutter
+  entry_screen: RoleSelectionView
+  assets:
+  - path: assets/images/taxicat_logo.png
+    type: image
+  screens:
+  - name: RoleSelectionView
+    title: TaxiCat Mobile
+    description: 'Initial role selection screen for the TaxiCat Android app.
+
+      This is the first screen shown when the application starts. Show the TaxiCat logo, the title TaxiCat
+      Mobile, and two large role selection buttons: PASSENGER and DRIVER.
+
+      When the user selects PASSENGER, navigate to PassengerView using replacement navigation so that
+      the user cannot navigate back to RoleSelectionView during the current app session.
+
+      When the user selects DRIVER, navigate to DriverView using replacement navigation so that the user
+      cannot navigate back to RoleSelectionView during the current app session.
+
+      This is an MVP. Role selection does not need to persist between application restarts. To choose
+      another role, the app may simply be restarted.
+
+      Keep the design dark navy and yellow using the TaxiCat visual identity. This screen does not need
+      ride polling or backend operations.
+
+      Use Navigator.pushReplacementNamed to enter the selected role. Do not allow navigation back to RoleSelectionView.'
+    image: assets/images/taxicat_logo.png
+    uses: []
+    widgets:
+    - RoleSelectionCard
+    - PassengerRoleButton
+    - DriverRoleButton
+    navigation:
+      actions:
+      - name: select_passenger
+        to: PassengerView
+      - name: select_driver
+        to: DriverView
+      back: false
+    depends_on: []
+  - name: PassengerView
+    title: TaxiCat Passenger
+    description: "Passenger screen for the TaxiCat Android application.\nUse passenger ID 10 for the demonstration.\n\
+      The screen must show a real interactive Mapbox map in the background using Flutter Stack. Use the\
+      \ official mapbox_maps_flutter SDK version 3.x. The map widget is MapWidget. Use CameraViewportState\
+      \ to initialize the viewport. Use a real Mapbox map style, not a simulated map.\nThis passenger\
+      \ demo represents a fixed ride scenario in Mexico City. The passenger is located at Palacio de Bellas\
+      \ Artes. Fixed passenger landmark: - Name: Palacio de Bellas Artes - Latitude: 19.4352 - Longitude:\
+      \ -99.1412\nThe destination of the demo ride is Estadio Azteca. Fixed destination landmark: - Name:\
+      \ Estadio Azteca - Latitude: 19.3029 - Longitude: -99.1505\nUse the map as a demonstration of a\
+      \ real taxi app. Show a fixed passenger pin only at Palacio de Bellas Artes. Do not show a driver\
+      \ pin on this passenger screen.\nWhen the ride status permits it, show a real route line between\
+      \ Palacio de Bellas Artes and Estadio Azteca using Mapbox route rendering behavior or a Directions\
+      \ API result rendered on the map. The route is a fixed demonstration route. Do not fake a hand-drawn\
+      \ route. If route retrieval fails, keep the map visible and show a clear error message, but never\
+      \ fake route data.\nThe passenger may be interpreted as going from Bellas Artes to a Mexico vs Brazil\
+      \ match at Estadio Azteca.\nKeep the map visible in all ride lifecycle states. Keep passenger controls\
+      \ visible above the map using floating cards/panels. Allow map gestures wherever overlays do not\
+      \ intercept them.\nPASSENGER BEHAVIOR: Show a prominent Request Ride button only when the passenger\
+      \ has no active ride.\nA ride is considered active when its status is REQUESTED, ACCEPTED, or IN_PROGRESS.\n\
+      When there is an active ride, the Request Ride button must be hidden. In that case show the active\
+      \ ride information and a Cancel Ride button.\nShow Cancel Ride while the ride status is REQUESTED,\
+      \ ACCEPTED, or IN_PROGRESS.\nAfter the ride becomes COMPLETED or CANCELLED, the active ride no longer\
+      \ blocks new requests. In those terminal states, Request Ride becomes visible again and Cancel Ride\
+      \ is hidden.\nAfter requesting a ride, display ride ID and current status. Refresh ride status every\
+      \ two seconds while the screen is visible. Dispose polling timers when no longer needed. Show loading\
+      \ indicators during operations. Show connection errors clearly. Never fabricate ride records or\
+      \ backend connectivity. Keep the user interface responsive.\nThe Mapbox token must come from MAPBOX_ACCESS_TOKEN\
+      \ at application startup. Never hardcode credentials. Do not initialize MapboxOptions in this screen;\
+      \ the deterministic CIDD bootstrap handles the access token.\nROUTE VISIBILITY:\n- Keep the map\
+      \ and passenger pin visible in every state.\n- Show the road route ONLY when this passenger's current\
+      \ ride\n  has status IN_PROGRESS.\n- Hide the route when no ride exists or its status is\n  REQUESTED,\
+      \ ACCEPTED, COMPLETED, or CANCELLED.\n- Refresh route visibility when GetRideStatus returns a\n\
+      \  changed status, using the existing two-second polling.\n- After a terminal state, remove the\
+      \ previously drawn route.\n- Do not show a route merely because the map has loaded.\n- Do not fabricate\
+      \ a ride or route geometry.\n"
+    map:
+      provider: mapbox
+      token_env: MAPBOX_ACCESS_TOKEN
+      initial_camera:
+        latitude: 19.4352
+        longitude: -99.1412
+        zoom: 14
+    image: assets/images/taxicat_logo.png
+    uses:
+    - RequestRide
+    - GetRideStatus
+    - CancelRide
+    widgets:
+    - PassengerHeaderCard
+    - PassengerRidePanel
+    - RideStatusCard
+    - PassengerMapBackground
+    - PassengerPinOverlay
+    - PassengerRouteOverlay
+    - BackendConnectionIndicator
+    depends_on:
+    - application.RequestRide
+    - application.GetRideStatus
+    - application.CancelRide
+  - name: DriverView
+    title: TaxiCat Driver
+    description: "Driver screen for the TaxiCat Android application.\nUse driver ID 20 for the demonstration.\n\
+      The screen must show a real interactive Mapbox map in the background using Flutter Stack. Use the\
+      \ official mapbox_maps_flutter SDK version 3.x. The map widget is MapWidget. Use CameraViewportState\
+      \ to initialize the viewport. Use a real Mapbox map style, not a simulated map.\nThis driver demo\
+      \ represents a fixed ride scenario in Mexico City. The driver is located at Estadio Azteca. Fixed\
+      \ driver landmark: - Name: Estadio Azteca - Latitude: 19.3029 - Longitude: -99.1505\nThe demonstration\
+      \ trip origin is Palacio de Bellas Artes. Fixed trip origin landmark: - Name: Palacio de Bellas\
+      \ Artes - Latitude: 19.4352 - Longitude: -99.1412\nShow a fixed driver pin only at Estadio Azteca.\
+      \ Do not show a passenger pin on this driver screen.\nWhen the ride status permits it, show a real\
+      \ route line between Palacio de Bellas Artes and Estadio Azteca using Mapbox route rendering behavior\
+      \ or a Directions API result rendered on the map. The route is a fixed demonstration route. Do not\
+      \ fake a hand-drawn route. If route retrieval fails, keep the map visible and show a clear error\
+      \ message, but never fake route data.\nKeep the map visible in all ride lifecycle states. Keep driver\
+      \ controls visible above the map using floating cards/panels. Allow map gestures wherever overlays\
+      \ do not intercept them.\nDRIVER BEHAVIOR: Show available REQUESTED rides from the backend. Refresh\
+      \ the list every two seconds while the screen is visible. Allow accepting an available ride.\nFor\
+      \ the assigned ride show: - Start Ride when the ride is ACCEPTED and assigned to driver ID 20. -\
+      \ Complete Ride when the ride is IN_PROGRESS and assigned to driver ID 20.\nPreserve remote server\
+      \ authority for transitions. Show loading indicators during operations. Show connection errors clearly.\
+      \ Dispose polling timers when no longer needed. Never fabricate ride records or backend connectivity.\
+      \ Keep the user interface responsive.\nThe Mapbox token must come from MAPBOX_ACCESS_TOKEN at application\
+      \ startup. Never hardcode credentials. Do not initialize MapboxOptions in this screen; the deterministic\
+      \ CIDD bootstrap handles the access token.\nROUTE VISIBILITY:\n- Keep the map and driver pin visible\
+      \ in every state.\n- Show the road route ONLY when the ride assigned to driver\n  ID 20 has status\
+      \ IN_PROGRESS.\n- Hide the route when no ride is assigned or its status is\n  REQUESTED, ACCEPTED,\
+      \ COMPLETED, or CANCELLED.\n- Update route visibility immediately after StartRide and\n  CompleteRide\
+      \ return successfully.\n- Remove the previous route when the ride is completed.\n- Do not show a\
+      \ route merely because the map has loaded.\n- Do not fabricate a ride or route geometry.\n"
+    map:
+      provider: mapbox
+      token_env: MAPBOX_ACCESS_TOKEN
+      initial_camera:
+        latitude: 19.3029
+        longitude: -99.1505
+        zoom: 14
+    image: assets/images/taxicat_logo.png
+    uses:
+    - ListAvailableRides
+    - AcceptRide
+    - StartRide
+    - CompleteRide
+    widgets:
+    - DriverHeaderCard
+    - DriverRidePanel
+    - AvailableRideList
+    - AssignedRideCard
+    - DriverMapBackground
+    - DriverPinOverlay
+    - DriverRouteOverlay
+    - BackendConnectionIndicator
+    depends_on:
+    - application.ListAvailableRides
+    - application.AcceptRide
+    - application.StartRide
+    - application.CompleteRide

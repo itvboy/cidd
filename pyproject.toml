@@ -17,3 +17,12 @@ cidd = "cidd.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["cidd*"]
+
+[tool.setuptools.package-data]
+cidd = [
+    "skills/dart/*.yaml",
+    "skills/api/dart/*.txt",
+]
+
+[tool.setuptools]
+include-package-data = true
